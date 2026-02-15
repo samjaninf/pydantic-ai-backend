@@ -95,6 +95,77 @@ When `permissions` is provided, it overrides the legacy `require_write_approval`
 
 See [Permissions](permissions.md) for full documentation.
 
+## Image Support
+
+When working with multimodal models (e.g., GPT-4o, Claude), you can enable image support so that `read_file` returns image data that the model can see, instead of garbled binary text.
+
+```python
+# Enable image support
+toolset = create_console_toolset(image_support=True)
+```
+
+When `image_support=True`, reading a file with a recognized image extension returns a `BinaryContent` object that pydantic-ai sends to the model as an inline image. For all other file types, `read_file` behaves normally and returns text.
+
+### Recognized Image Types
+
+| Extension | Media Type |
+|-----------|------------|
+| `.png` | `image/png` |
+| `.jpg` | `image/jpeg` |
+| `.jpeg` | `image/jpeg` |
+| `.gif` | `image/gif` |
+| `.webp` | `image/webp` |
+
+### Size Limits
+
+Large images are rejected to avoid excessive token usage. The default limit is 50 MB:
+
+```python
+# Default: 50 MB max
+toolset = create_console_toolset(image_support=True)
+
+# Custom limit: 5 MB max
+toolset = create_console_toolset(
+    image_support=True,
+    max_image_bytes=5 * 1024 * 1024,
+)
+```
+
+Images exceeding the limit return an error message like: `Error: Image 'photo.png' too large (12.3MB, max 5.0MB)`.
+
+### Example: Visual Analysis Agent
+
+```python
+from dataclasses import dataclass
+from pydantic_ai import Agent
+from pydantic_ai_backends import LocalBackend, create_console_toolset
+
+@dataclass
+class Deps:
+    backend: LocalBackend
+
+# Enable image support for multimodal model
+toolset = create_console_toolset(image_support=True)
+
+agent = Agent(
+    "openai:gpt-4o",  # Multimodal model
+    system_prompt="You can read and analyze images using read_file.",
+    deps_type=Deps,
+)
+agent = agent.with_toolset(toolset)
+
+result = agent.run_sync(
+    "Read screenshot.png and describe what you see",
+    deps=Deps(backend=LocalBackend(root_dir="/workspace")),
+)
+```
+
+!!! tip "When to enable image support"
+    Only enable `image_support` when using a multimodal model that can process images.
+    With text-only models, image data will be wasted tokens. When disabled (the default),
+    reading an image file returns the raw text representation, which is not useful
+    but avoids unexpected behavior.
+
 ## ConsoleDeps Protocol
 
 Your dependencies class must have a `backend` property:

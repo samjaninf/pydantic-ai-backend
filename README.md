@@ -157,6 +157,17 @@ toolset = create_console_toolset(
 
 **Available tools:** `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `execute`
 
+### Image Support
+
+For multimodal models, enable image file handling:
+
+```python
+toolset = create_console_toolset(image_support=True)
+
+# Now read_file on .png/.jpg/.gif/.webp returns BinaryContent
+# that multimodal models (GPT-4o, Claude, etc.) can see directly
+```
+
 ## Permission System
 
 Fine-grained access control:
@@ -229,6 +240,7 @@ sandbox = await manager.get_or_create("user-123")
 | **Permission System** | Pattern-based access control with presets |
 | **Docker Isolation** | Safe execution of untrusted code |
 | **Session Management** | Multi-user support with workspace persistence |
+| **Image Support** | Multimodal models can see images via BinaryContent |
 | **Pre-built Runtimes** | Python and Node.js environments ready to go |
 
 ## Related Projects

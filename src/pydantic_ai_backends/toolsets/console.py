@@ -3,12 +3,27 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Literal, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
-from pydantic_ai import RunContext
+from pydantic_ai import BinaryContent, RunContext
 
 from pydantic_ai_backends.protocol import BackendProtocol
 from pydantic_ai_backends.types import GrepMatch
+
+IMAGE_EXTENSIONS: frozenset[str] = frozenset({"png", "jpg", "jpeg", "gif", "webp"})
+"""File extensions recognized as images when image_support is enabled."""
+
+IMAGE_MEDIA_TYPES: dict[str, str] = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
+"""Mapping of file extensions to MIME media types for images."""
+
+DEFAULT_MAX_IMAGE_BYTES: int = 50 * 1024 * 1024
+"""Default maximum image file size (50MB)."""
 
 if TYPE_CHECKING:
     from pydantic_ai.toolsets import FunctionToolset
@@ -87,6 +102,8 @@ def create_console_toolset(  # noqa: C901
     default_ignore_hidden: bool = True,
     permissions: PermissionRuleset | None = None,
     max_retries: int = 1,
+    image_support: bool = False,
+    max_image_bytes: int = DEFAULT_MAX_IMAGE_BYTES,
 ) -> FunctionToolset[ConsoleDeps]:
     """Create a console toolset for file operations and shell execution.
 
@@ -110,6 +127,13 @@ def create_console_toolset(  # noqa: C901
             When the model sends invalid arguments (e.g. missing required fields),
             the validation error is fed back and the model can retry up to this
             many times. Defaults to 1.
+        image_support: Whether to enable image file handling in read_file.
+            When True, reading image files (.png, .jpg, .jpeg, .gif, .webp) returns
+            a BinaryContent object that multimodal models can see, instead of garbled
+            text. Defaults to False.
+        max_image_bytes: Maximum image file size in bytes (default: 10MB).
+            Images larger than this will return an error message instead.
+            Only used when image_support is True.
 
     Returns:
         FunctionToolset with console tools.
@@ -125,6 +149,9 @@ def create_console_toolset(  # noqa: C901
 
         toolset = create_console_toolset()
         deps = MyDeps(backend=LocalBackend("/workspace"))
+
+        # With image support for multimodal models
+        toolset = create_console_toolset(image_support=True)
 
         # Or with permissions
         from pydantic_ai_backends.permissions import DEFAULT_RULESET
@@ -174,7 +201,7 @@ def create_console_toolset(  # noqa: C901
         path: str,
         offset: int = 0,
         limit: int = 2000,
-    ) -> str:
+    ) -> Any:
         """Read file content with line numbers.
 
         Args:
@@ -182,6 +209,20 @@ def create_console_toolset(  # noqa: C901
             offset: Line number to start reading from (0-indexed).
             limit: Maximum number of lines to read.
         """
+        if image_support:
+            ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+            if ext in IMAGE_EXTENSIONS:
+                raw = ctx.deps.backend._read_bytes(path)
+                if not raw:
+                    return f"Error: Image file '{path}' not found or empty"
+                if len(raw) > max_image_bytes:
+                    size_mb = len(raw) / (1024 * 1024)
+                    limit_mb = max_image_bytes / (1024 * 1024)
+                    return (
+                        f"Error: Image '{path}' too large ({size_mb:.1f}MB, max {limit_mb:.1f}MB)"
+                    )
+                media_type = IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
+                return BinaryContent(data=raw, media_type=media_type)
         return ctx.deps.backend.read(path, offset, limit)
 
     @toolset.tool(requires_approval=write_approval)

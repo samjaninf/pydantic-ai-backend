@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2025-02-16
+
+### Added
+
+- **Image support in `read_file`**: When `image_support=True` is passed to `create_console_toolset()`, reading image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) returns a `BinaryContent` object that multimodal models can see, instead of garbled text.
+  - `image_support` parameter on `create_console_toolset()` (default: `False`)
+  - `max_image_bytes` parameter to limit image file size (default: 50MB)
+  - `IMAGE_EXTENSIONS`, `IMAGE_MEDIA_TYPES`, `DEFAULT_MAX_IMAGE_BYTES` constants exported from the package
+- **Documentation**: Expanded guides for backends, console toolset, permissions, and multi-user setups.
+
 ## [0.1.6] - 2025-02-07
 
 ### Added
