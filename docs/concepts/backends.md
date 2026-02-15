@@ -184,6 +184,133 @@ result = agent.run_sync(
 )
 ```
 
+### Path Prefix Matching
+
+CompositeBackend matches paths using **longest prefix first**. Routes are sorted by length at initialization, so more specific prefixes take priority over shorter ones:
+
+```python
+backend = CompositeBackend(
+    default=StateBackend(),
+    routes={
+        "/project/": LocalBackend("/my/project"),
+        "/project/vendor/": LocalBackend("/vendor/libs", enable_execute=False),
+    },
+)
+
+# Matches "/project/vendor/" (longer prefix wins)
+backend.read("/project/vendor/lib.py")
+
+# Matches "/project/"
+backend.read("/project/app.py")
+
+# No prefix matches - falls back to default StateBackend
+backend.write("/temp/scratch.txt", "temporary data")
+```
+
+Paths are matched with `str.startswith()`, so prefixes should end with `/` to avoid partial matches (e.g., `/project/` won't accidentally match `/projects/`).
+
+### Aggregated Operations
+
+When you call `ls`, `glob`, or `grep` at the root level (`/` or `""`), CompositeBackend aggregates results from **all** backends:
+
+```python
+from pydantic_ai_backends import CompositeBackend, StateBackend, LocalBackend
+
+backend = CompositeBackend(
+    default=StateBackend(),
+    routes={
+        "/src/": LocalBackend("/home/user/project/src"),
+        "/data/": LocalBackend("/shared/data", enable_execute=False),
+    },
+)
+
+# ls at root shows virtual directories for each route prefix
+# plus any files in the default backend
+entries = backend.ls_info("/")
+# Returns: [/data, /src, ...any default backend entries...]
+
+# glob from root searches ALL backends
+matches = backend.glob_info("**/*.py", "/")
+# Returns Python files from default backend, /src/, and /data/
+
+# grep from root searches ALL backends
+results = backend.grep_raw("TODO", "/")
+# Returns matches from all backends combined
+```
+
+When targeting a specific path, only the matching backend is queried:
+
+```python
+# Only searches the /src/ backend
+results = backend.grep_raw("import", "/src/")
+
+# Only searches the /data/ backend
+entries = backend.glob_info("*.csv", "/data/")
+```
+
+!!! note "Error handling in aggregated operations"
+    During aggregated `grep` operations, errors from individual backends are silently
+    ignored. This prevents a failing backend from blocking results from other backends.
+
+### Common Patterns
+
+#### Persistent project + ephemeral scratch space
+
+```python
+backend = CompositeBackend(
+    default=StateBackend(),  # Ephemeral scratch space
+    routes={
+        "/project/": LocalBackend("/home/user/my-app"),
+    },
+)
+
+# Agent writes code to persistent local filesystem
+# Agent uses /temp/ or /scratch/ for intermediate results (ephemeral)
+```
+
+#### Multiple local directories
+
+```python
+backend = CompositeBackend(
+    default=StateBackend(),
+    routes={
+        "/frontend/": LocalBackend("/home/user/app/frontend"),
+        "/backend/": LocalBackend("/home/user/app/backend"),
+        "/shared/": LocalBackend("/home/user/app/shared", enable_execute=False),
+    },
+)
+```
+
+#### Read-only data + writable output
+
+```python
+backend = CompositeBackend(
+    default=StateBackend(),  # Writable scratch space
+    routes={
+        "/data/": LocalBackend("/shared/datasets", enable_execute=False),
+        "/output/": LocalBackend("/home/user/results"),
+    },
+)
+```
+
+#### Local project + Docker execution
+
+```python
+from pydantic_ai_backends import (
+    CompositeBackend, LocalBackend, DockerSandbox
+)
+
+backend = CompositeBackend(
+    default=LocalBackend("/home/user/project"),
+    routes={
+        "/sandbox/": DockerSandbox(runtime="python-datascience"),
+    },
+)
+
+# Read/write files on local filesystem by default
+# Execute untrusted code safely in /sandbox/
+```
+
 ### Use Cases
 
 - Persistent project files + ephemeral scratch space

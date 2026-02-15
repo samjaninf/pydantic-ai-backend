@@ -202,41 +202,158 @@ PermissionRule(pattern="git *", action="allow")
 
 ## Ask Callback
 
-For interactive approval, provide an `ask_callback`:
+When a permission rule resolves to `"ask"`, the system invokes an `AskCallback` to determine whether the operation should proceed. The callback is an async function with the following signature:
 
 ```python
-async def my_approval_callback(
+from pydantic_ai_backends.permissions import AskCallback
+
+# Type: Callable[[PermissionOperation, str, str], Awaitable[bool]]
+#                  operation         target reason
+```
+
+### CLI Approval
+
+For interactive CLI applications, prompt the user directly:
+
+```python
+async def cli_approval(
     operation: str,  # "read", "write", "edit", "execute", etc.
     target: str,     # Path or command
     reason: str,     # Why approval is needed
 ) -> bool:
-    # Your approval logic here
-    response = input(f"Allow {operation} on {target}? [y/N] ")
+    response = input(f"Allow {operation} on '{target}'? [y/N] ")
     return response.lower() == "y"
 
 backend = LocalBackend(
     root_dir="/workspace",
     permissions=DEFAULT_RULESET,
-    ask_callback=my_approval_callback,
+    ask_callback=cli_approval,
 )
 ```
 
-### Ask Fallback
+### Web App Approval
 
-When no callback is provided, `ask_fallback` controls behavior:
+For web applications, you might store pending approvals and wait for a user response:
 
 ```python
-# Deny operations that need approval (default behavior)
+import asyncio
+
+# In-memory store for pending approvals
+pending_approvals: dict[str, asyncio.Future[bool]] = {}
+
+async def web_approval(operation: str, target: str, reason: str) -> bool:
+    """Send approval request to frontend via WebSocket, wait for response."""
+    approval_id = f"{operation}:{target}"
+    future: asyncio.Future[bool] = asyncio.get_event_loop().create_future()
+    pending_approvals[approval_id] = future
+
+    # Your WebSocket/SSE notification logic here
+    await notify_frontend(operation, target, reason)
+
+    try:
+        # Wait up to 60 seconds for user to respond
+        return await asyncio.wait_for(future, timeout=60.0)
+    except asyncio.TimeoutError:
+        return False  # Deny on timeout
+    finally:
+        pending_approvals.pop(approval_id, None)
+```
+
+### Auto-Approve with Logging
+
+For trusted environments where you want to allow everything but keep an audit trail:
+
+```python
+import logging
+
+logger = logging.getLogger("permissions")
+
+async def auto_approve_with_logging(
+    operation: str, target: str, reason: str
+) -> bool:
+    logger.info(f"Auto-approved: {operation} on '{target}' ({reason})")
+    return True
+
 backend = LocalBackend(
+    root_dir="/workspace",
+    permissions=STRICT_RULESET,  # Everything asks
+    ask_callback=auto_approve_with_logging,
+)
+```
+
+### Conditional Approval
+
+Implement logic that auto-approves some operations and denies others:
+
+```python
+# Auto-approve writes to temp directories, deny everything else
+async def conditional_approval(
+    operation: str, target: str, reason: str
+) -> bool:
+    if operation == "write" and target.startswith("/temp/"):
+        return True
+    if operation == "execute" and target.startswith("python "):
+        return True
+    return False
+```
+
+## Ask Fallback
+
+When a permission rule resolves to `"ask"` but no `ask_callback` is provided (or the callback returns `False`), the `AskFallback` setting controls what happens.
+
+There are two fallback modes:
+
+| Fallback | Behavior |
+|----------|----------|
+| `"deny"` | Raises `PermissionDeniedError` (operation silently blocked) |
+| `"error"` | Raises `PermissionError` (signals that approval was needed but unavailable) |
+
+```python
+from pydantic_ai_backends.permissions import AskFallback
+
+# Deny operations that need approval (safe for automated pipelines)
+backend = LocalBackend(
+    root_dir="/workspace",
     permissions=DEFAULT_RULESET,
     ask_fallback="deny",
 )
 
-# Raise PermissionError for operations that need approval
+# Raise PermissionError - useful for detecting missing callback setup
 backend = LocalBackend(
+    root_dir="/workspace",
     permissions=DEFAULT_RULESET,
     ask_fallback="error",
 )
+```
+
+### Using PermissionChecker Directly
+
+For programmatic use outside of backends, use `PermissionChecker` with explicit callback and fallback:
+
+```python
+from pydantic_ai_backends.permissions import PermissionChecker, DEFAULT_RULESET
+
+async def my_callback(op: str, target: str, reason: str) -> bool:
+    return input(f"Allow {op} on {target}? ").lower() == "y"
+
+checker = PermissionChecker(
+    ruleset=DEFAULT_RULESET,
+    ask_callback=my_callback,
+    ask_fallback="error",  # Raise if callback unavailable
+)
+
+# Async check - invokes callback for "ask" actions
+try:
+    allowed = await checker.check("write", "/config/settings.yaml", "Save settings")
+except PermissionError:
+    print("No callback available to ask for permission")
+except PermissionDeniedError:
+    print("Permission explicitly denied")
+
+# Sync check - returns action without invoking callback
+action = checker.check_sync("write", "/config/settings.yaml")
+if action == "ask":
+    print("This operation would need approval")
 ```
 
 ## Integration with LocalBackend

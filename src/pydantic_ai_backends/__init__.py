@@ -88,6 +88,9 @@ if TYPE_CHECKING:
         create_ruleset,
     )
     from pydantic_ai_backends.toolsets.console import (
+        DEFAULT_MAX_IMAGE_BYTES,
+        IMAGE_EXTENSIONS,
+        IMAGE_MEDIA_TYPES,
         ConsoleDeps,
         ConsoleToolset,
         create_console_toolset,
@@ -101,6 +104,9 @@ _LAZY_IMPORTS = {
     "get_console_system_prompt": "pydantic_ai_backends.toolsets.console",
     "ConsoleToolset": "pydantic_ai_backends.toolsets.console",
     "ConsoleDeps": "pydantic_ai_backends.toolsets.console",
+    "IMAGE_EXTENSIONS": "pydantic_ai_backends.toolsets.console",
+    "IMAGE_MEDIA_TYPES": "pydantic_ai_backends.toolsets.console",
+    "DEFAULT_MAX_IMAGE_BYTES": "pydantic_ai_backends.toolsets.console",
     # Docker sandbox (requires docker extra)
     "DockerSandbox": "pydantic_ai_backends.backends.docker.sandbox",
     "BaseSandbox": "pydantic_ai_backends.backends.docker.sandbox",
@@ -159,6 +165,10 @@ __all__ = [
     "get_console_system_prompt",
     "ConsoleToolset",
     "ConsoleDeps",
+    # Image support constants
+    "IMAGE_EXTENSIONS",
+    "IMAGE_MEDIA_TYPES",
+    "DEFAULT_MAX_IMAGE_BYTES",
     # Docker sandbox (optional - requires docker extra)
     "BaseSandbox",
     "DockerSandbox",
