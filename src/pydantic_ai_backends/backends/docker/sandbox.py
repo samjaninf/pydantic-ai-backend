@@ -241,7 +241,7 @@ class BaseSandbox(ABC):
 
         return sorted(entries, key=lambda x: x["path"])
 
-    def grep_raw(  # pragma: no cover
+    def grep_raw(
         self,
         pattern: str,
         path: str | None = None,
@@ -249,7 +249,7 @@ class BaseSandbox(ABC):
         ignore_hidden: bool = True,
     ) -> list[GrepMatch] | str:
         """Search using grep command."""
-        search_path = path or "/"
+        search_path = path or "."
 
         search_path = shlex.quote(search_path)
 
