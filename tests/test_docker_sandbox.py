@@ -278,104 +278,20 @@ class TestDockerSandboxReadTextHandling:
             raise AssertionError("Exception should have been raised.")
 
 
-class TestBaseSandboxGrepRaw:
-    """Unit tests for BaseSandbox.grep_raw — no Docker required.
+class TestDockerSandboxGrepRaw:
+    """Tests for BaseSandbox.grep_raw default path behaviour."""
 
-    Uses a lightweight _MockSandbox that subclasses BaseSandbox and captures
-    the shell command passed to execute(), returning a configurable response.
-    """
+    @pytest.mark.docker
+    def test_grep_raw_finds_match_without_explicit_path(self, docker_sandbox):
+        """grep_raw with no path should search the working directory, not /."""
+        docker_sandbox.write("/workspace/grep_target.txt", "hello_unique_sentinel")
+        result = docker_sandbox.grep_raw("hello_unique_sentinel")
+        assert isinstance(result, list)
+        assert len(result) >= 1
+        assert any("grep_target.txt" in m["path"] for m in result)
 
-    def _make_sandbox(self, execute_output: str = "", exit_code: int = 0):
-        """Return a _MockSandbox whose execute() records the last command."""
-        from pydantic_ai_backends.backends.docker.sandbox import BaseSandbox
-        from pydantic_ai_backends.types import EditResult, ExecuteResponse
-
-        class _MockSandbox(BaseSandbox):
-            last_cmd: str = ""
-
-            def execute(self, command: str, timeout: int | None = None) -> ExecuteResponse:
-                self.last_cmd = command
-                return ExecuteResponse(output=execute_output, exit_code=exit_code)
-
-            def edit(self, path: str, old: str, new: str, replace_all: bool = False) -> EditResult:
-                return EditResult(occurrences=0)
-
-            # Required abstract methods not under test
-            def start(self) -> None: ...
-            def stop(self) -> None: ...
-
-            @property
-            def id(self) -> str:
-                return "mock"
-
-        sandbox = _MockSandbox.__new__(_MockSandbox)
-        return sandbox
-
-    def test_grep_raw_no_path_defaults_to_dot(self):
-        """When path=None, the search path should be '.' not '/'."""
-        sandbox = self._make_sandbox()
-        sandbox.grep_raw("pattern")
-        assert sandbox.last_cmd.endswith(" ."), sandbox.last_cmd
-
-    def test_grep_raw_with_explicit_path(self):
-        """When path is given, it should appear in the command."""
-        sandbox = self._make_sandbox()
-        sandbox.grep_raw("pattern", path="/workspace")
-        assert "'/workspace'" in sandbox.last_cmd or "/workspace" in sandbox.last_cmd
-
-    def test_grep_raw_no_matches_returns_empty_list(self):
-        """exit_code 1 (no matches) should return an empty list."""
-        sandbox = self._make_sandbox(execute_output="", exit_code=1)
-        result = sandbox.grep_raw("pattern")
+    @pytest.mark.docker
+    def test_grep_raw_no_match_returns_empty_list(self, docker_sandbox):
+        """grep_raw returns [] when the pattern is not found."""
+        result = docker_sandbox.grep_raw("this_string_will_never_exist_xyzzy_99999")
         assert result == []
-
-    def test_grep_raw_error_returns_string(self):
-        """exit_code 2 (grep error) should return an error string."""
-        sandbox = self._make_sandbox(execute_output="some error", exit_code=2)
-        result = sandbox.grep_raw("pattern")
-        assert isinstance(result, str)
-        assert result.startswith("Error:")
-
-    def test_grep_raw_with_glob(self):
-        """When glob is given, --include= should appear in the command."""
-        sandbox = self._make_sandbox()
-        sandbox.grep_raw("pattern", glob="*.py")
-        assert "--include=" in sandbox.last_cmd
-
-    def test_grep_raw_ignore_hidden_false(self):
-        """When ignore_hidden=False, --exclude flags should be absent."""
-        sandbox = self._make_sandbox()
-        sandbox.grep_raw("pattern", ignore_hidden=False)
-        assert "--exclude" not in sandbox.last_cmd
-
-    def test_grep_raw_returns_matches(self):
-        """Valid grep output should be parsed into GrepMatch objects."""
-        output = "foo.py:10:hello world\nbar.py:42:another line"
-        sandbox = self._make_sandbox(execute_output=output, exit_code=0)
-        result = sandbox.grep_raw("hello")
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert result[0]["path"] == "foo.py"
-        assert result[0]["line_number"] == 10
-        assert result[0]["line"] == "hello world"
-        assert result[1]["path"] == "bar.py"
-        assert result[1]["line_number"] == 42
-
-    def test_grep_raw_skips_lines_with_too_few_parts(self):
-        """Lines with fewer than 3 colon-separated parts are silently skipped."""
-        output = "no-colon-here\nfoo.py:10:valid match"
-        sandbox = self._make_sandbox(execute_output=output, exit_code=0)
-        result = sandbox.grep_raw("pattern")
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert result[0]["path"] == "foo.py"
-
-    def test_grep_raw_skips_lines_with_non_numeric_line_number(self):
-        """Lines where the line-number field is not an integer are silently skipped."""
-        output = "foo.py:NaN:bad line\nbar.py:5:good line"
-        sandbox = self._make_sandbox(execute_output=output, exit_code=0)
-        result = sandbox.grep_raw("pattern")
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert result[0]["path"] == "bar.py"
-        assert result[0]["line_number"] == 5

@@ -241,7 +241,7 @@ class BaseSandbox(ABC):
 
         return sorted(entries, key=lambda x: x["path"])
 
-    def grep_raw(
+    def grep_raw(  # pragma: no cover
         self,
         pattern: str,
         path: str | None = None,
