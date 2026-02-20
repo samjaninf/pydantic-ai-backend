@@ -429,9 +429,7 @@ class TestConsoleToolsetHashlineFormat:
     def test_hashline_edit_requires_write_approval(self):
         from pydantic_ai_backends import create_console_toolset
 
-        toolset = create_console_toolset(
-            edit_format="hashline", require_write_approval=True
-        )
+        toolset = create_console_toolset(edit_format="hashline", require_write_approval=True)
         assert toolset.tools["hashline_edit"].requires_approval is True
         assert toolset.tools["write_file"].requires_approval is True
 
