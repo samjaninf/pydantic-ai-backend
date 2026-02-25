@@ -11,7 +11,7 @@ import tarfile
 import time
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pydantic_ai_backends.backends.base import (
     CODE_EXT,

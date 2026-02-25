@@ -158,9 +158,11 @@ class TestDaytonaSandboxInit:
                     process=FakeProcess(_exec_results=[FakeExecResult(exit_code=1)]),
                 )
 
-        with patch.object(_FAKE_DAYTONA_MODULE, "Daytona", FailingDaytona):
-            with pytest.raises(RuntimeError, match="failed to start"):
-                DaytonaSandbox(api_key="key", startup_timeout=1)
+        with (
+            patch.object(_FAKE_DAYTONA_MODULE, "Daytona", FailingDaytona),
+            pytest.raises(RuntimeError, match="failed to start"),
+        ):
+            DaytonaSandbox(api_key="key", startup_timeout=1)
 
 
 class TestDaytonaSandboxExecute:
