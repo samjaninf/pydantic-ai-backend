@@ -62,9 +62,7 @@ class DaytonaSandbox(BaseSandbox):  # pragma: no cover
 
         resolved_key = api_key or os.environ.get("DAYTONA_API_KEY")
         if not resolved_key:
-            raise ValueError(
-                "Daytona API key is required. Pass api_key= or set DAYTONA_API_KEY."
-            )
+            raise ValueError("Daytona API key is required. Pass api_key= or set DAYTONA_API_KEY.")
 
         self._client: Any = Daytona(DaytonaConfig(api_key=resolved_key))
         self._sandbox: Any = self._client.create()
@@ -95,9 +93,7 @@ class DaytonaSandbox(BaseSandbox):  # pragma: no cover
         try:
             self._client.delete(self._sandbox)
         finally:
-            raise RuntimeError(
-                f"Daytona sandbox failed to start within {timeout} seconds"
-            )
+            raise RuntimeError(f"Daytona sandbox failed to start within {timeout} seconds")
 
     # ------------------------------------------------------------------
     # SandboxProtocol — execute
@@ -139,9 +135,7 @@ class DaytonaSandbox(BaseSandbox):  # pragma: no cover
         from daytona import FileDownloadRequest
 
         try:
-            responses = self._sandbox.fs.download_files(
-                [FileDownloadRequest(source=path)]
-            )
+            responses = self._sandbox.fs.download_files([FileDownloadRequest(source=path)])
             data = responses[0].result
             return data.encode() if isinstance(data, str) else data
         except Exception as e:
