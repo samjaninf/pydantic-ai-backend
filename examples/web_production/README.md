@@ -90,3 +90,21 @@ web_production/
 - Each browser session gets isolated Docker container
 - Users cannot access other users' files
 - Containers auto-cleanup on session end
+
+---
+
+<div align="center">
+
+### Need help implementing this in your company?
+
+<p>We're <a href="https://vstorm.co"><b>Vstorm</b></a> — an Applied Agentic AI Engineering Consultancy<br>with 30+ production AI agent implementations.</p>
+
+<a href="https://vstorm.co/contact-us/">
+  <img src="https://img.shields.io/badge/Talk%20to%20us%20%E2%86%92-0066FF?style=for-the-badge&logoColor=white" alt="Talk to us">
+</a>
+
+<br><br>
+
+Made with ❤️ by <a href="https://vstorm.co"><b>Vstorm</b></a>
+
+</div>
