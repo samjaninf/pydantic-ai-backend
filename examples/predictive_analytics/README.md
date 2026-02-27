@@ -94,3 +94,21 @@ This demo uses Docker sandbox **as a tool** — the agent chooses when to invoke
 | **Flexibility** | Can mix tools (query locally + predict in Docker) | Everything runs in one place |
 
 For this demo, "environment as a tool" is the right choice — the agent mostly answers questions and only needs Docker for running sklearn/pandas predictions.
+
+---
+
+<div align="center">
+
+### Need help implementing this in your company?
+
+<p>We're <a href="https://vstorm.co"><b>Vstorm</b></a> — an Applied Agentic AI Engineering Consultancy<br>with 30+ production AI agent implementations.</p>
+
+<a href="https://vstorm.co/contact-us/">
+  <img src="https://img.shields.io/badge/Talk%20to%20us%20%E2%86%92-0066FF?style=for-the-badge&logoColor=white" alt="Talk to us">
+</a>
+
+<br><br>
+
+Made with ❤️ by <a href="https://vstorm.co"><b>Vstorm</b></a>
+
+</div>
