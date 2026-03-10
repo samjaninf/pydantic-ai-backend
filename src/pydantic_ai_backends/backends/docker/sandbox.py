@@ -297,15 +297,15 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
                 truncated=False,
             )
 
-    def _read_bytes(self, path: str) -> bytes | None:
+    def _read_bytes(self, path: str) -> bytes:
         """Read raw bytes from file in container.
 
         Args:
             path: Path to the file in the container.
 
         Returns:
-            File content as bytes, or None if the file does not exist or
-            cannot be read.
+            File content as bytes, or empty bytes if the file does not
+            exist or cannot be read.
         """
         path = self._resolve_path(path)
         self._ensure_container()
@@ -316,7 +316,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             stream, stat = self._container.get_archive(path)
             raw_tar_bytes = b"".join(stream)
         except Exception:
-            return None
+            return b""
 
         # Extract file from tar archive
         try:
@@ -327,15 +327,15 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
                 member = next((m for m in tar.getmembers() if m.isfile()), None)
 
                 if not member:
-                    return None
+                    return b""
 
                 f = tar.extractfile(member)
                 if f is None:
-                    return None
+                    return b""
 
                 return f.read()
         except Exception:
-            return None
+            return b""
 
     def read(self, path: str, offset: int = 0, limit: int = 2000) -> str:
         """
@@ -351,7 +351,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         try:
             # Read raw bytes from file
             file_bytes = self._read_bytes(path)
-            if file_bytes is None:
+            if not file_bytes:
                 return f"Error: File '{original_path}' not found"
 
             # Convert bytes to string
@@ -533,7 +533,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             # Read the file content
             file_bytes = self._read_bytes(path)
 
-            if file_bytes is None:
+            if not file_bytes:
                 return EditResult(error=f"File '{original_path}' not found")
 
             # Decode to string using the same logic as read()

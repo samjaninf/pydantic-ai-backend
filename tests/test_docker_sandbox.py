@@ -263,20 +263,29 @@ class TestDockerSandboxReadTextHandling:
         result = sandbox._convert_bytes_to_text("cfg", b"whatever")
         assert result == decoded_value
 
-    def test_decode_unknown_text_binary_fallback(self):
+    def test_decode_unknown_text_binary_fallback(self, monkeypatch):
         """When no encoding decodes cleanly, binary marker should be returned."""
+        import pydantic_ai_backends.backends.docker.sandbox as sandbox_mod
         from pydantic_ai_backends import DockerSandbox
 
         sandbox = DockerSandbox.__new__(DockerSandbox)
 
-        # Crafted bytes with many decoding errors in common encodings
-        raw_bytes = bytearray(range(129, 255)) * 4  # lots of binary data
-        try:
+        # Force chardet to detect utf-8 so binary bytes produce many
+        # replacement characters and trigger the binary heuristic.
+        fake_chardet = type(
+            "FakeChardet",
+            (),
+            {
+                "detect": staticmethod(
+                    lambda b: {"encoding": "utf-8", "confidence": 0.5}
+                )
+            },
+        )()
+        monkeypatch.setattr(sandbox_mod, "_get_chardet", lambda: fake_chardet)
+
+        raw_bytes = bytearray(range(129, 255)) * 4
+        with pytest.raises(ValueError, match="Binary File"):
             sandbox._decode_unknown_text(raw_bytes)
-        except ValueError as e:
-            assert str(e) == "[Binary File]"
-        else:
-            raise AssertionError("Exception should have been raised.")
 
 
 class TestDockerSandboxGrepRaw:
