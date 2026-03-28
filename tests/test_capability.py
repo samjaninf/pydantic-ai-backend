@@ -288,9 +288,7 @@ class TestHashlineEditDenial:
         from pydantic_ai_backends.permissions.presets import READONLY_RULESET
         from pydantic_ai_backends.toolsets.console import create_console_toolset
 
-        toolset = create_console_toolset(
-            permissions=READONLY_RULESET, edit_format="hashline"
-        )
+        toolset = create_console_toolset(permissions=READONLY_RULESET, edit_format="hashline")
         tool_names = set(toolset.tools.keys())
         assert "hashline_edit" not in tool_names
         assert "read_file" in tool_names
