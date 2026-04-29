@@ -95,6 +95,7 @@ if TYPE_CHECKING:
         PermissionRuleset,
         create_ruleset,
     )
+    from pydantic_ai_backends.capability import ConsoleCapability
     from pydantic_ai_backends.toolsets.console import (
         DEFAULT_MAX_IMAGE_BYTES,
         EDIT_FILE_DESCRIPTION,
