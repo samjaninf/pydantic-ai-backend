@@ -12,23 +12,34 @@ class CompositeBackend:
     Allows combining multiple backends (e.g., memory for temp files,
     filesystem for persistent storage) under a unified interface.
 
+    Note:
+        Routes are matched using exact-or-child semantics: a path matches a prefix
+        if it equals the prefix exactly or starts with ``prefix + "/"``.
+        Paths are passed to the matched backend **as-is** (no prefix stripping),
+        so each backend must accept the full virtual path.
+
+        ``StateBackend`` accepts any virtual path, making it the natural choice for
+        routes. ``LocalBackend`` validates paths against its ``root_dir`` and will
+        reject virtual paths that differ from the real filesystem path — use it as
+        the **default** backend, not inside ``routes``.
+
     Example:
         ```python
-        from pydantic_ai_backends import CompositeBackend, StateBackend, FilesystemBackend
+        from pydantic_ai_backends import CompositeBackend, StateBackend, LocalBackend
 
+        # LocalBackend as default (real filesystem), StateBackend for ephemeral space
         backend = CompositeBackend(
-            default=StateBackend(),  # Default for unmatched paths
+            default=LocalBackend(root_dir="/home/user/project"),
             routes={
-                "/project/": FilesystemBackend("/my/project"),
-                "/workspace/": FilesystemBackend("/tmp/workspace"),
+                "/scratch/": StateBackend(),  # Ephemeral virtual space
             },
         )
 
-        # Routes to FilesystemBackend
-        backend.write("/project/app.py", "...")
+        # Routes to LocalBackend (real filesystem, relative to root_dir)
+        backend.write("src/app.py", "...")
 
-        # Routes to StateBackend (default)
-        backend.write("/temp/scratch.txt", "...")
+        # Routes to StateBackend (ephemeral)
+        backend.write("/scratch/temp.txt", "...")
         ```
     """
 
