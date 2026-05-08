@@ -1,5 +1,6 @@
 """Tests for LocalBackend."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -282,6 +283,57 @@ class TestLocalBackendExecute:
         result = backend.execute("pwd")
         assert result.exit_code == 0
         assert str(tmp_path) in result.output
+
+
+class TestLocalBackendAsyncExecute:
+    """Test LocalBackend async shell execution."""
+
+    async def test_async_execute_basic(self, tmp_path: Path):
+        """Test basic async command execution."""
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await backend.async_execute("echo 'hello'")
+        assert result.exit_code == 0
+        assert "hello" in result.output
+
+    async def test_async_execute_disabled_raises(self, tmp_path: Path):
+        """Test that async_execute raises RuntimeError when disabled."""
+        backend = LocalBackend(root_dir=tmp_path, enable_execute=False)
+
+        with pytest.raises(RuntimeError, match="disabled"):
+            await backend.async_execute("echo 'hello'")
+
+    async def test_async_execute_permission_denied(self, tmp_path: Path):
+        """Test async execute returns error when permission denies."""
+        from pydantic_ai_backends.permissions import OperationPermissions, PermissionRuleset
+
+        ruleset = PermissionRuleset(execute=OperationPermissions(default="deny"))
+        backend = LocalBackend(root_dir=tmp_path, permissions=ruleset)
+
+        result = await backend.async_execute("echo hello")
+
+        assert result.exit_code == 1
+        assert "Error" in result.output
+        assert "Permission denied" in result.output
+
+    async def test_async_execute_timeout_exceeded(self, tmp_path: Path):
+        """Test async command execution timeout returns timed-out response."""
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await backend.async_execute("sleep 10", timeout=1)
+        assert result.exit_code == 124
+        assert "timed out" in result.output
+
+    async def test_async_execute_cancelled(self, tmp_path: Path):
+        """Test that CancelledError propagates from async_execute."""
+        backend = LocalBackend(root_dir=tmp_path)
+
+        task = asyncio.create_task(backend.async_execute("sleep 60"))
+        await asyncio.sleep(0.05)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
 
 class TestLocalBackendPathResolution:

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -583,8 +585,9 @@ class LocalBackend:
             )
 
         try:
+            shell_cmd = ["cmd", "/c", command] if sys.platform == "win32" else ["sh", "-c", command]
             result = subprocess.run(
-                ["sh", "-c", command],
+                shell_cmd,
                 cwd=self._root,
                 capture_output=True,
                 text=True,
@@ -616,3 +619,65 @@ class LocalBackend:
                 exit_code=1,
                 truncated=False,
             )
+
+    async def async_execute(self, command: str, timeout: int | None = None) -> ExecuteResponse:
+        """Async, cancellable version of execute().
+
+        Uses asyncio.create_subprocess_exec so that cancelling the calling task
+        immediately kills the subprocess rather than waiting for the thread to finish.
+        """
+        if not self._enable_execute:
+            raise RuntimeError(
+                "Shell execution is disabled for this backend. "
+                "Initialize with enable_execute=True to enable."
+            )
+
+        perm_error = self._check_permission_sync("execute", command)
+        if perm_error:
+            return ExecuteResponse(output=f"Error: {perm_error}", exit_code=1, truncated=False)
+
+        shell_args = ["cmd", "/c", command] if sys.platform == "win32" else ["sh", "-c", command]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *shell_args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self._root,
+            )
+
+            try:
+                stdout_b, stderr_b = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout or 120
+                )
+            except asyncio.CancelledError:
+                proc.kill()
+                await proc.communicate()
+                raise
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                return ExecuteResponse(
+                    output="Error: Command timed out",
+                    exit_code=124,
+                    truncated=False,
+                )
+
+            output = stdout_b.decode("utf-8", errors="replace") + stderr_b.decode(
+                "utf-8", errors="replace"
+            )
+
+            max_output = 100000
+            truncated = len(output) > max_output
+            if truncated:  # pragma: no cover
+                output = output[:max_output]
+
+            return ExecuteResponse(
+                output=output,
+                exit_code=proc.returncode,
+                truncated=truncated,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # pragma: no cover
+            return ExecuteResponse(output=f"Error: {e}", exit_code=1, truncated=False)
