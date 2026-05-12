@@ -33,6 +33,8 @@ AskCallback = Callable[["PermissionOperation", str, str], Awaitable[bool]]
 # Fallback behavior when ask_callback is not provided
 AskFallback = Literal["deny", "error"]
 
+MAX_EXECUTE_OUTPUT = 100_000
+
 
 class LocalBackend:
     """Local filesystem backend with optional shell execution.
@@ -125,6 +127,10 @@ class LocalBackend:
         # If no allowed_directories specified, restrict to root_dir only
         if self._allowed_directories is None:
             self._allowed_directories = [self._root]
+
+    @staticmethod
+    def _shell_cmd(command: str) -> list[str]:
+        return ["cmd", "/c", command] if sys.platform == "win32" else ["sh", "-c", command]
 
     @property
     def id(self) -> str:
@@ -585,22 +591,20 @@ class LocalBackend:
             )
 
         try:
-            shell_cmd = ["cmd", "/c", command] if sys.platform == "win32" else ["sh", "-c", command]
             result = subprocess.run(
-                shell_cmd,
+                self._shell_cmd(command),
                 cwd=self._root,
                 capture_output=True,
                 text=True,
-                timeout=timeout or 120,
+                timeout=timeout if timeout is not None else 120,
             )
 
             output = result.stdout + result.stderr
 
             # Truncate if too long
-            max_output = 100000
-            truncated = len(output) > max_output
+            truncated = len(output) > MAX_EXECUTE_OUTPUT
             if truncated:  # pragma: no cover
-                output = output[:max_output]
+                output = output[:MAX_EXECUTE_OUTPUT]
 
             return ExecuteResponse(
                 output=output,
@@ -636,11 +640,9 @@ class LocalBackend:
         if perm_error:
             return ExecuteResponse(output=f"Error: {perm_error}", exit_code=1, truncated=False)
 
-        shell_args = ["cmd", "/c", command] if sys.platform == "win32" else ["sh", "-c", command]
-
         try:
             proc = await asyncio.create_subprocess_exec(
-                *shell_args,
+                *self._shell_cmd(command),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self._root,
@@ -648,7 +650,7 @@ class LocalBackend:
 
             try:
                 stdout_b, stderr_b = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout or 120
+                    proc.communicate(), timeout=timeout if timeout is not None else 120
                 )
             except asyncio.CancelledError:
                 proc.kill()
@@ -667,17 +669,14 @@ class LocalBackend:
                 "utf-8", errors="replace"
             )
 
-            max_output = 100000
-            truncated = len(output) > max_output
+            truncated = len(output) > MAX_EXECUTE_OUTPUT
             if truncated:  # pragma: no cover
-                output = output[:max_output]
+                output = output[:MAX_EXECUTE_OUTPUT]
 
             return ExecuteResponse(
                 output=output,
-                exit_code=proc.returncode,
+                exit_code=proc.returncode if proc.returncode is not None else 1,
                 truncated=truncated,
             )
-        except asyncio.CancelledError:
-            raise
         except Exception as e:  # pragma: no cover
             return ExecuteResponse(output=f"Error: {e}", exit_code=1, truncated=False)
