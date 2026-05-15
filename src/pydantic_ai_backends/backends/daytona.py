@@ -35,7 +35,7 @@ class DaytonaSandbox(BaseSandbox):  # pragma: no cover
 
     Creates an ephemeral Daytona sandbox for running commands and managing
     files in an isolated cloud environment.  Uses native Daytona file APIs
-    for ``_read_bytes`` and ``write``; all other file helpers are inherited
+    for ``read_bytes`` and ``write``; all other file helpers are inherited
     from :class:`BaseSandbox` (shell-based).
     """
 
@@ -139,7 +139,7 @@ class DaytonaSandbox(BaseSandbox):  # pragma: no cover
 
         Falls back to ``False`` for any error (missing file, permission
         denied, transient API failure) — mirroring the broad exception
-        handling in :meth:`_read_bytes`.
+        handling in :meth:`read_bytes`.
         """
         try:
             info = self._sandbox.fs.get_file_info(path)
@@ -147,7 +147,7 @@ class DaytonaSandbox(BaseSandbox):  # pragma: no cover
             return False
         return not bool(getattr(info, "is_dir", False))
 
-    def _read_bytes(self, path: str) -> bytes:
+    def read_bytes(self, path: str) -> bytes:
         """Download file bytes via Daytona's native file API."""
         from daytona import FileDownloadRequest
 
@@ -204,7 +204,7 @@ class DaytonaSandbox(BaseSandbox):  # pragma: no cover
             :class:`EditResult` with path and occurrence count, or error.
         """
         try:
-            file_bytes = self._read_bytes(path)
+            file_bytes = self.read_bytes(path)
             if file_bytes.startswith(b"[Error:"):
                 return EditResult(error=file_bytes.decode("utf-8", errors="replace"))
 

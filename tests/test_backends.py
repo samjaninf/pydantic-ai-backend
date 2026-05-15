@@ -144,14 +144,14 @@ class TestStateBackend:
 
     def test_exists_distinguishes_empty_file_from_missing(self):
         """An empty file exists; a missing one does not — even though both
-        round-trip through ``_read_bytes`` as ``b""``."""
+        round-trip through ``read_bytes`` as ``b""``."""
         backend = StateBackend()
         backend.write("/empty.txt", "")
         assert backend.exists("/empty.txt") is True
         assert backend.exists("/never-written.txt") is False
-        # _read_bytes can't distinguish these — exists() is the point of this PR.
-        assert backend._read_bytes("/empty.txt") == b""
-        assert backend._read_bytes("/never-written.txt") == b""
+        # read_bytes can't distinguish these — exists() is the point of this PR.
+        assert backend.read_bytes("/empty.txt") == b""
+        assert backend.read_bytes("/never-written.txt") == b""
 
     def test_write_bytes(self):
         """Test writing bytes to StateBackend."""
@@ -166,7 +166,7 @@ class TestStateBackend:
         content = backend.read("/binary.txt")
         assert "Hello, bytes!" in content
 
-    def test_read_bytes(self):
+    def testread_bytes(self):
         """Test reading raw bytes from files.
 
         Note: StateBackend stores content as text lines, so binary data
@@ -177,30 +177,30 @@ class TestStateBackend:
 
         # Write text content
         backend.write("/text.txt", "Hello, World!")
-        data = backend._read_bytes("/text.txt")
+        data = backend.read_bytes("/text.txt")
         assert isinstance(data, bytes)
         assert data == b"Hello, World!"
 
         # Write valid UTF-8 bytes content (as text will round-trip correctly)
         backend.write("/valid_utf8.txt", "Hello 世界 🌍")
-        data = backend._read_bytes("/valid_utf8.txt")
+        data = backend.read_bytes("/valid_utf8.txt")
         assert isinstance(data, bytes)
         assert data == "Hello 世界 🌍".encode()
 
         # Test multiline content
         backend.write("/multi.txt", "Line 1\nLine 2\nLine 3")
-        data = backend._read_bytes("/multi.txt")
+        data = backend.read_bytes("/multi.txt")
         assert isinstance(data, bytes)
         assert data == b"Line 1\nLine 2\nLine 3"
 
         # Test non-existent file
-        data = backend._read_bytes("/nonexistent.txt")
+        data = backend.read_bytes("/nonexistent.txt")
         assert isinstance(data, bytes)
         assert data == b""
 
         # Test empty file
         backend.write("/empty.txt", "")
-        data = backend._read_bytes("/empty.txt")
+        data = backend.read_bytes("/empty.txt")
         assert isinstance(data, bytes)
         assert data == b""
 
@@ -316,42 +316,42 @@ class TestLocalBackend:
         results = backend.glob_info("**/*.py")
         assert len(results) == 2
 
-    def test_read_bytes(self, tmp_path):
+    def testread_bytes(self, tmp_path):
         """Test reading raw bytes from files."""
         backend = LocalBackend(root_dir=tmp_path)
 
         # Write text content
         backend.write("text.txt", "Hello, World!")
-        data = backend._read_bytes("text.txt")
+        data = backend.read_bytes("text.txt")
         assert isinstance(data, bytes)
         assert data == b"Hello, World!"
 
         # Write binary content
         backend.write("binary.dat", b"\x00\x01\x02\xff\xfe")
-        data = backend._read_bytes("binary.dat")
+        data = backend.read_bytes("binary.dat")
         assert isinstance(data, bytes)
         assert data == b"\x00\x01\x02\xff\xfe"
 
         # Test multiline content
         backend.write("multi.txt", "Line 1\nLine 2\nLine 3")
-        data = backend._read_bytes("multi.txt")
+        data = backend.read_bytes("multi.txt")
         assert isinstance(data, bytes)
         assert data == b"Line 1\nLine 2\nLine 3"
 
         # Test non-existent file
-        data = backend._read_bytes("nonexistent.txt")
+        data = backend.read_bytes("nonexistent.txt")
         assert isinstance(data, bytes)
         assert data == b""
 
         # Test UTF-8 content
         backend.write("unicode.txt", "Hello 世界 🌍")
-        data = backend._read_bytes("unicode.txt")
+        data = backend.read_bytes("unicode.txt")
         assert isinstance(data, bytes)
         assert data == "Hello 世界 🌍".encode()
 
         # Test empty file
         backend.write("empty.txt", "")
-        data = backend._read_bytes("empty.txt")
+        data = backend.read_bytes("empty.txt")
         assert isinstance(data, bytes)
         assert data == b""
 
@@ -421,7 +421,7 @@ class TestLocalBackend:
         # Binary file with special name
         result = backend.write("data (binary) [v2].bin", b"\x00\x01\x02\x03")
         assert result.error is None
-        data = backend._read_bytes("data (binary) [v2].bin")
+        data = backend.read_bytes("data (binary) [v2].bin")
         assert data == b"\x00\x01\x02\x03"
 
     def test_execute(self, tmp_path):
@@ -507,7 +507,7 @@ class TestCompositeBackend:
         assert "file1.txt" in names
         assert "special" in names  # Virtual directory for route
 
-    def test_read_bytes(self):
+    def testread_bytes(self):
         """Test reading raw bytes through composite backend.
 
         Note: Using StateBackend instances which store text, so binary
@@ -523,24 +523,24 @@ class TestCompositeBackend:
 
         # Write to default backend
         composite.write("/default.txt", "default content")
-        data = composite._read_bytes("/default.txt")
+        data = composite.read_bytes("/default.txt")
         assert isinstance(data, bytes)
         assert data == b"default content"
 
         # Write to routed backend
         composite.write("/special/routed.txt", "routed content")
-        data = composite._read_bytes("/special/routed.txt")
+        data = composite.read_bytes("/special/routed.txt")
         assert isinstance(data, bytes)
         assert data == b"routed content"
 
         # Write UTF-8 text to routed backend
         composite.write("/special/unicode.txt", "Hello 世界")
-        data = composite._read_bytes("/special/unicode.txt")
+        data = composite.read_bytes("/special/unicode.txt")
         assert isinstance(data, bytes)
         assert data == "Hello 世界".encode()
 
         # Test non-existent file
-        data = composite._read_bytes("/nonexistent.txt")
+        data = composite.read_bytes("/nonexistent.txt")
         assert isinstance(data, bytes)
         assert data == b""
 

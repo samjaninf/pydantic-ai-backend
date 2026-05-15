@@ -276,7 +276,7 @@ class LocalBackend:
 
         return sorted(results, key=lambda x: (not x["is_dir"], x["name"]))
 
-    def _read_bytes(self, path: str) -> bytes:  # pragma: no cover
+    def read_bytes(self, path: str) -> bytes:  # pragma: no cover
         """Read raw bytes from a file."""
         try:
             full_path = self._validate_path(path)

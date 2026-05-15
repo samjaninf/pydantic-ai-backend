@@ -237,29 +237,29 @@ class TestDaytonaSandboxExecute:
 
 
 class TestDaytonaSandboxReadBytes:
-    def test_read_bytes_string(self) -> None:
+    def testread_bytes_string(self) -> None:
         sandbox = _make_sandbox()
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/test.txt", result="file content")
         ]
 
-        data = sandbox._read_bytes("/test.txt")
+        data = sandbox.read_bytes("/test.txt")
         assert data == b"file content"
 
-    def test_read_bytes_binary(self) -> None:
+    def testread_bytes_binary(self) -> None:
         sandbox = _make_sandbox()
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/img.bin", result=b"\x89PNG")
         ]
 
-        data = sandbox._read_bytes("/img.bin")
+        data = sandbox.read_bytes("/img.bin")
         assert data == b"\x89PNG"
 
-    def test_read_bytes_error(self) -> None:
+    def testread_bytes_error(self) -> None:
         sandbox = _make_sandbox()
         sandbox._sandbox.fs.download_files = MagicMock(side_effect=RuntimeError("download failed"))
 
-        data = sandbox._read_bytes("/missing.txt")
+        data = sandbox.read_bytes("/missing.txt")
         assert data.startswith(b"[Error:")
 
 
@@ -374,7 +374,7 @@ class TestDaytonaSandboxEdit:
         assert result.error is not None
         assert "read fail" in result.error
 
-    def test_edit_read_bytes_returns_error_bytes(self) -> None:
+    def test_editread_bytes_returns_error_bytes(self) -> None:
         sandbox = _make_sandbox()
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/f.py", result="[Error: not found]")

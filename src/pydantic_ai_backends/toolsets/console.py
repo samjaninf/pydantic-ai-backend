@@ -427,7 +427,7 @@ def create_console_toolset(  # noqa: C901
             if image_support:
                 ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
                 if ext in IMAGE_EXTENSIONS:
-                    raw = await asyncio.to_thread(ctx.deps.backend._read_bytes, path)
+                    raw = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
                     if not raw:
                         return f"Error: Image file '{path}' not found or empty"
                     if len(raw) > max_image_bytes:
@@ -442,7 +442,7 @@ def create_console_toolset(  # noqa: C901
 
             from pydantic_ai_backends.hashline import format_hashline_output
 
-            raw_bytes = await asyncio.to_thread(ctx.deps.backend._read_bytes, path)
+            raw_bytes = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
             if not raw_bytes:
                 return f"Error: File '{path}' not found"
             text = raw_bytes.decode("utf-8", errors="replace")
@@ -467,7 +467,7 @@ def create_console_toolset(  # noqa: C901
             if image_support:
                 ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
                 if ext in IMAGE_EXTENSIONS:
-                    raw = await asyncio.to_thread(ctx.deps.backend._read_bytes, path)
+                    raw = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
                     if not raw:
                         return f"Error: Image file '{path}' not found or empty"
                     if len(raw) > max_image_bytes:
@@ -537,7 +537,7 @@ of replacing it.
             from pydantic_ai_backends.hashline import apply_hashline_edit_with_summary
 
             # Read current file content
-            raw_bytes = await asyncio.to_thread(ctx.deps.backend._read_bytes, path)
+            raw_bytes = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
             if not raw_bytes:
                 return f"Error: File '{path}' not found"
 

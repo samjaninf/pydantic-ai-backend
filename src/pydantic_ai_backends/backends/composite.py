@@ -116,9 +116,9 @@ class CompositeBackend:
         backend = self._get_backend(normalized)
         return backend.ls_info(normalized)
 
-    def _read_bytes(self, path: str) -> bytes:
+    def read_bytes(self, path: str) -> bytes:
         """Read bytes from the appropriate backend."""
-        return self._get_backend(path)._read_bytes(path)
+        return self._get_backend(path).read_bytes(path)
 
     def read(self, path: str, offset: int = 0, limit: int = 2000) -> str:
         """Read from the appropriate backend."""

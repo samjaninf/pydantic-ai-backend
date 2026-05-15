@@ -143,7 +143,7 @@ class StateBackend:
 
         return sorted(entries.values(), key=lambda x: (not x["is_dir"], x["name"]))
 
-    def _read_bytes(self, path: str) -> bytes:
+    def read_bytes(self, path: str) -> bytes:
         """Read raw bytes from a file.
 
         Args:

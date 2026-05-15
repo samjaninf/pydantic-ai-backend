@@ -59,7 +59,7 @@ class BackendProtocol(Protocol):
         """
         ...
 
-    def _read_bytes(self, path: str) -> bytes:
+    def read_bytes(self, path: str) -> bytes:
         """Read raw bytes from a file.
 
         Args:
