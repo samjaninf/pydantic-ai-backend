@@ -284,9 +284,7 @@ def _is_denied_by_ruleset(
     return op_perms.default == "deny"
 
 
-_edit_locks: weakref.WeakKeyDictionary[Any, dict[str, asyncio.Lock]] = (
-    weakref.WeakKeyDictionary()
-)
+_edit_locks: weakref.WeakKeyDictionary[Any, dict[str, asyncio.Lock]] = weakref.WeakKeyDictionary()
 
 
 def create_console_toolset(  # noqa: C901
