@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.9] - 2026-06-01
+## [0.2.10] - 2026-06-01
 
 ### Changed
 
@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - **Documentation accuracy pass.** Rewrote the broken `SessionManager` example in the multi-user guide to use the real async API (`get_or_create`/`release`/`shutdown`, `default_runtime`/`workspace_root`) and corrected its API-reference members (`create_session`/`get_session`/`end_session` did not exist). Added a `DaytonaSandbox` API page and documented the `[daytona]` install extra, replaced the deprecated `PermissionError` with `PermissionAskError` in the permissions reference, fixed invalid Docker runtime keys (`python` → `python-minimal`) and the incorrect `DockerSandbox` `workspace_root` claim, added a hashline edit-format section to the console-toolset guide, and expanded the capability page. Resolved a duplicate `RuntimeConfig` render so `mkdocs build --strict` passes with zero warnings.
+
+## [0.2.9] - 2026-05-24
+
+### Infrastructure
+
+- **CI: bump `astral-sh/setup-uv` to `v8.1.0`** across `ci.yml` (×3) and `publish.yml` — pulled in from Renovate's [Dependency Dashboard #41](https://github.com/vstorm-co/pydantic-ai-backend/issues/41) (rate-limited there). Pinned to the specific patch because `astral-sh/setup-uv` does not maintain a rolling `v8` tag — only `v8.0.0` / `v8.1.0` exist (`v7` and earlier do have rolling majors).
+- **CI: bump `actions/setup-python` to `v6`** in `docs.yml` — same source as above; `v6` has a rolling tag so plain `@v6` is used.
+
+No source-code changes — pure CI / dependency-bot housekeeping. Library behaviour unchanged from 0.2.8.
 
 ## [0.2.8] - 2026-05-24
 
