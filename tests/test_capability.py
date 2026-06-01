@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import pytest
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.usage import RunUsage
 
 from pydantic_ai_backends.capability import ConsoleCapability
 from pydantic_ai_backends.permissions.presets import PERMISSIVE_RULESET, READONLY_RULESET
-from pydantic_ai import RunContext
-from pydantic_ai.usage import RunUsage
-from pydantic_ai.messages import ToolCallPart
 
 
 def _make_ctx():

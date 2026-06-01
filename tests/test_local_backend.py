@@ -1,14 +1,14 @@
 """Tests for LocalBackend."""
 
 import asyncio
+import os
+import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from pydantic_ai_backends import LocalBackend
-import sys
-import os
-from unittest.mock import MagicMock
 
 
 class TestLocalBackendInit:

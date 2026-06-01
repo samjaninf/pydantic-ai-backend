@@ -1,7 +1,8 @@
 """Tests for backend implementations."""
 
-from pydantic_ai_backends import CompositeBackend, LocalBackend, StateBackend
 import pytest
+
+from pydantic_ai_backends import CompositeBackend, LocalBackend, StateBackend
 
 
 class TestStateBackend:

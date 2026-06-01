@@ -6,6 +6,7 @@ using LocalBackend with pydantic-ai.
 Requires: pip install pydantic-ai-backend[console]
 """
 
+import argparse
 import asyncio
 import os
 from dataclasses import dataclass
@@ -14,7 +15,6 @@ from pathlib import Path
 from pydantic_ai import Agent
 
 from pydantic_ai_backends import LocalBackend, create_console_toolset, get_console_system_prompt
-import argparse
 
 
 @dataclass
