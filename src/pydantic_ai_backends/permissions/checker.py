@@ -6,6 +6,8 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Literal
 
+from typing_extensions import deprecated
+
 from pydantic_ai_backends.permissions.types import (
     PermissionAction,
     PermissionOperation,
@@ -20,8 +22,13 @@ AskCallback = Callable[[PermissionOperation, str, str], Awaitable[bool]]
 AskFallback = Literal["deny", "error"]
 
 
-class PermissionError(Exception):
-    """Raised when a permission check fails with ask_fallback="error"."""
+class PermissionAskError(Exception):
+    """Raised when a permission check fails with ask_fallback="error".
+
+    Named `PermissionAskError` (not `PermissionError`) so it does not
+    shadow the builtin `PermissionError` (an `OSError` subclass) for
+    importers of this module.
+    """
 
     def __init__(
         self,
@@ -36,6 +43,15 @@ class PermissionError(Exception):
         if reason:
             message += f": {reason}"
         super().__init__(message)
+
+
+@deprecated("Use `PermissionAskError` instead; this name shadows the builtin PermissionError.")
+class PermissionError(PermissionAskError):
+    """Deprecated alias for :class:`PermissionAskError`.
+
+    Retained for backward compatibility. Prefer `PermissionAskError` to
+    avoid shadowing the builtin `PermissionError`.
+    """
 
 
 class PermissionDeniedError(Exception):
@@ -96,15 +112,24 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
         elif c == "[":
             # Character class - find the end
             j = i + 1
+            negated = False
             if j < n and pattern[j] in "!^":
+                # Glob negation uses '!'; regex negation uses '^'.
+                negated = True
                 j += 1
             if j < n and pattern[j] == "]":
                 j += 1
             while j < n and pattern[j] != "]":
                 j += 1
             if j < n:
-                # Valid character class
-                regex_parts.append(pattern[i : j + 1])
+                # Valid character class. Emit '[^...]' for a negated class so
+                # glob '[!a]' becomes regex '[^a]' (any char except 'a') rather
+                # than the literal-matching '[!a]'.
+                if negated:
+                    inner = pattern[i + 2 : j]
+                    regex_parts.append("[^" + inner + "]")
+                else:
+                    regex_parts.append(pattern[i : j + 1])
                 i = j + 1
             else:
                 # No closing bracket, treat as literal
@@ -258,7 +283,7 @@ class PermissionChecker:
 
         Raises:
             PermissionDeniedError: If the operation is explicitly denied.
-            PermissionError: If ask_fallback="error" and callback unavailable.
+            PermissionAskError: If ask_fallback="error" and callback unavailable.
         """
         action = self.check_sync(operation, target)
 
@@ -278,7 +303,7 @@ class PermissionChecker:
 
         # No callback available
         if self._ask_fallback == "error":
-            raise PermissionError(operation, target, reason)
+            raise PermissionAskError(operation, target, reason)
 
         # ask_fallback == "deny"
         raise PermissionDeniedError(operation, target)

@@ -1,6 +1,6 @@
 """Console capability for pydantic-ai agents.
 
-Provides ``ConsoleCapability`` that bundles console toolset + instructions +
+Provides `ConsoleCapability` that bundles console toolset + instructions +
 permission enforcement via the pydantic-ai capabilities API.
 
 Example:

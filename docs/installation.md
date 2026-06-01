@@ -39,12 +39,22 @@ uv add pydantic-ai-backend[docker]
 pip install pydantic-ai-backend[docker]
 ```
 
+### Daytona Sandbox
+
+For isolated code execution in Daytona cloud sandboxes (installs `daytona-sdk`):
+
+```bash
+uv add pydantic-ai-backend[daytona]
+# or
+pip install pydantic-ai-backend[daytona]
+```
+
 ### All Dependencies
 
 ```bash
-uv add pydantic-ai-backend[console,docker]
+uv add pydantic-ai-backend[console,docker,daytona]
 # or
-pip install pydantic-ai-backend[console,docker]
+pip install pydantic-ai-backend[console,docker,daytona]
 ```
 
 ## Environment Setup
@@ -75,6 +85,15 @@ For using `DockerSandbox`:
 
 ```bash
 docker pull python:3.12-slim
+```
+
+### Daytona (for DaytonaSandbox)
+
+For using `DaytonaSandbox`, set your Daytona API key (or pass `api_key=` to the
+constructor):
+
+```bash
+export DAYTONA_API_KEY=your-api-key
 ```
 
 ## Verify Installation

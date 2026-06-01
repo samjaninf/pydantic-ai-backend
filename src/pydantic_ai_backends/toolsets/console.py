@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
 from pydantic_ai import BinaryContent, RunContext
+from pydantic_ai.toolsets import FunctionToolset
 
 from pydantic_ai_backends.protocol import BackendProtocol
 from pydantic_ai_backends.types import GrepMatch
@@ -82,12 +83,12 @@ in a single response for maximum efficiency.
 HASHLINE_READ_FILE_DESCRIPTION = """\
 Read file content with hashline tags. ALWAYS read a file before editing it.
 
-Each line is tagged with a content hash: ``{line_number}:{hash}|{content}``.
-Use the ``line:hash`` pair when calling ``hashline_edit``.
+Each line is tagged with a content hash: `{line_number}:{hash}|{content}`.
+Use the `line:hash` pair when calling `hashline_edit`.
 
 Usage:
 - For large files (>200 lines), use pagination: first scan with \
-``limit=100`` to understand structure, then read targeted sections.
+`limit=100` to understand structure, then read targeted sections.
 - For small files, read the whole file by not providing offset/limit.
 - You can read multiple files in parallel for maximum efficiency.
 - Read existing files before modifying them — understand the codebase first."""
@@ -126,13 +127,13 @@ HASHLINE_EDIT_DESCRIPTION = """\
 Edit a file by referencing lines with their content hashes. \
 This is the preferred way to modify existing files.
 
-You MUST ``read_file`` first to see the ``line:hash`` tags.
+You MUST `read_file` first to see the `line:hash` tags.
 
 Operations:
-- **Replace single line**: set ``start_line`` + ``start_hash`` + ``new_content``
-- **Replace range**: also set ``end_line`` + ``end_hash``
-- **Insert after**: set ``insert_after=True`` to add lines after the anchor
-- **Delete**: set ``new_content=""``
+- **Replace single line**: set `start_line` + `start_hash` + `new_content`
+- **Replace range**: also set `end_line` + `end_hash`
+- **Insert after**: set `insert_after=True` to add lines after the anchor
+- **Delete**: set `new_content=""`
 
 If the hash doesn't match, the file changed since your last read — \
 re-read it first. When making multiple edits, work **bottom-to-top** so \
@@ -326,17 +327,17 @@ def create_console_toolset(  # noqa: C901
             When True, reading image files (.png, .jpg, .jpeg, .gif, .webp) returns
             a BinaryContent object that multimodal models can see, instead of garbled
             text. Defaults to False.
-        max_image_bytes: Maximum image file size in bytes (default: 10MB).
+        max_image_bytes: Maximum image file size in bytes (default: 50MB).
             Images larger than this will return an error message instead.
             Only used when image_support is True.
-        edit_format: File editing format to use.  ``"str_replace"`` (default) uses
-            exact string matching.  ``"hashline"`` tags each line with a content hash
+        edit_format: File editing format to use.  `"str_replace"` (default) uses
+            exact string matching.  `"hashline"` tags each line with a content hash
             so models can reference lines by number:hash instead of reproducing text.
         descriptions: Optional mapping of tool name to custom description override.
             When provided, the description for a tool is looked up as
-            ``descriptions.get("tool_name", DEFAULT_DESCRIPTION)``.  Valid keys are:
-            ``ls``, ``read_file``, ``write_file``, ``edit_file``, ``hashline_edit``,
-            ``glob``, ``grep``, ``execute``.
+            `descriptions.get("tool_name", DEFAULT_DESCRIPTION)`.  Valid keys are:
+            `ls`, `read_file`, `write_file`, `edit_file`, `hashline_edit`,
+            `glob`, `grep`, `execute`.
 
     Returns:
         FunctionToolset with console tools.
@@ -365,7 +366,6 @@ def create_console_toolset(  # noqa: C901
         toolset = create_console_toolset(permissions=DEFAULT_RULESET)
         ```
     """
-    from pydantic_ai.toolsets import FunctionToolset
 
     _descs = descriptions or {}
 
@@ -446,9 +446,9 @@ def create_console_toolset(  # noqa: C901
 
             from pydantic_ai_backends.hashline import format_hashline_output
 
-            raw_bytes = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
-            if not raw_bytes:
+            if not await asyncio.to_thread(ctx.deps.backend.exists, path):
                 return f"Error: File '{path}' not found"
+            raw_bytes = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
             text = raw_bytes.decode("utf-8", errors="replace")
             return format_hashline_output(text, offset, limit)
 
@@ -506,7 +506,7 @@ def create_console_toolset(  # noqa: C901
         if result.error:
             return f"Error: {result.error}"
 
-        lines = content.count("\n") + 1
+        lines = len(content.splitlines())
         return f"Wrote {lines} lines to {result.path}"
 
     # --- edit tool (str_replace or hashline) ---
@@ -546,9 +546,9 @@ of replacing it.
                 per_path[path] = asyncio.Lock()
             async with per_path[path]:
                 # Read current file content
-                raw_bytes = await asyncio.to_thread(backend.read_bytes, path)
-                if not raw_bytes:
+                if not await asyncio.to_thread(backend.exists, path):
                     return f"Error: File '{path}' not found"
+                raw_bytes = await asyncio.to_thread(backend.read_bytes, path)
 
                 text = raw_bytes.decode("utf-8", errors="replace")
 

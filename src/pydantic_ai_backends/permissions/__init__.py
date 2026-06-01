@@ -37,6 +37,7 @@ from __future__ import annotations
 from pydantic_ai_backends.permissions.checker import (
     AskCallback,
     AskFallback,
+    PermissionAskError,
     PermissionChecker,
     PermissionDeniedError,
     PermissionError,
@@ -67,6 +68,7 @@ __all__ = [
     "PermissionRuleset",
     # Checker
     "PermissionChecker",
+    "PermissionAskError",
     "PermissionError",
     "PermissionDeniedError",
     "AskCallback",

@@ -22,26 +22,31 @@ Build a multi-user web application where each user gets isolated storage and exe
 ```python
 from pydantic_ai_backends import SessionManager
 
-# Create manager
+# Create manager. By default it creates DockerSandbox instances.
 manager = SessionManager(
-    image="python:3.12-slim",
+    default_runtime="python-minimal",
     workspace_root="/app/workspaces",  # Persistent storage
-    auto_remove=True,
+    default_idle_timeout=3600,  # 1 hour
 )
 
-# Create session for user
-session_id = manager.create_session(user_id="alice")
-
-# Get sandbox for session
-sandbox = manager.get_session(session_id)
+# Get (or lazily create) the sandbox for a user. Returns the same
+# sandbox on subsequent calls and resets the idle timer.
+sandbox = await manager.get_or_create("alice")
 
 # User operations are isolated
 sandbox.write("/workspace/secret.txt", "Alice's private data")
 sandbox.execute("python script.py")
 
-# End session (removes container)
-manager.end_session(session_id)
+# Release a session and stop its container
+await manager.release("alice")
 ```
+
+`SessionManager` keys sandboxes by `session_id`. The
+[`get_or_create`][pydantic_ai_backends.backends.docker.session.SessionManager.get_or_create] method is
+the single entry point: it returns an existing live sandbox or starts a new one.
+Pass a `sandbox_factory` callable to back sessions with a different sandbox type
+(e.g. [`DaytonaSandbox`][pydantic_ai_backends.backends.daytona.DaytonaSandbox])
+instead of the default Docker path.
 
 ## FastAPI Server
 
@@ -60,13 +65,12 @@ session_manager: SessionManager | None = None
 async def lifespan(app):
     global session_manager
     session_manager = SessionManager(
-        image="python:3.12-slim",
+        default_runtime="python-minimal",
         workspace_root="/tmp/workspaces",
     )
     yield
-    # Cleanup on shutdown
-    for sid in list(session_manager._sandboxes.keys()):
-        session_manager.end_session(sid)
+    # Cleanup on shutdown: stop the cleanup loop and all containers
+    await session_manager.shutdown()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -88,17 +92,11 @@ class ChatResponse(BaseModel):
     session_id: str
 
 # Endpoints
-@app.post("/sessions")
-async def create_session(user_id: str | None = None):
-    session_id = session_manager.create_session(user_id=user_id)
-    return {"session_id": session_id}
-
 @app.post("/sessions/{session_id}/chat")
 async def chat(session_id: str, request: ChatRequest):
-    try:
-        sandbox = session_manager.get_session(session_id)
-    except ValueError:
-        raise HTTPException(404, "Session not found")
+    # get_or_create lazily starts a sandbox on the first request and
+    # reuses it (resetting the idle timer) on later ones.
+    sandbox = await session_manager.get_or_create(session_id)
 
     deps = UserDeps(backend=sandbox, user_id=session_id)
     result = await agent.run(request.message, deps=deps)
@@ -107,12 +105,16 @@ async def chat(session_id: str, request: ChatRequest):
 
 @app.delete("/sessions/{session_id}")
 async def end_session(session_id: str):
-    session_manager.end_session(session_id)
+    released = await session_manager.release(session_id)
+    if not released:
+        raise HTTPException(404, "Session not found")
     return {"message": "Session ended"}
 
 @app.get("/sessions/{session_id}/files")
-async def list_files(session_id: str, path: str = "."):
-    sandbox = session_manager.get_session(session_id)
+async def list_files(session_id: str, path: str = "/workspace"):
+    if session_id not in session_manager:
+        raise HTTPException(404, "Session not found")
+    sandbox = await session_manager.get_or_create(session_id)
     return {"files": sandbox.ls_info(path)}
 ```
 
@@ -123,9 +125,9 @@ import httpx
 
 async def main():
     async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
-        # Create session
-        r = await client.post("/sessions", params={"user_id": "alice"})
-        session_id = r.json()["session_id"]
+        # Pick a session id (e.g. the user id). The sandbox is created
+        # automatically on the first chat request.
+        session_id = "alice"
 
         # Chat with AI
         r = await client.post(

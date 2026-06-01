@@ -1,7 +1,7 @@
 """Hashline: content-hash-tagged line editing for AI agents.
 
 Inspired by Can Bölük's hashline format. Each line is tagged with a 2-character
-content hash. Models reference lines by ``number:hash`` pairs instead of
+content hash. Models reference lines by `number:hash` pairs instead of
 reproducing exact text, eliminating whitespace-matching errors and reducing
 output tokens.
 
@@ -71,7 +71,7 @@ def format_hashline_output(
 ) -> str:
     """Format file content with hashline tags.
 
-    Each line is prefixed with ``{line_num}:{hash}|``.
+    Each line is prefixed with `{line_num}:{hash}|`.
 
     Args:
         content: Raw file content as a string.
@@ -126,13 +126,13 @@ def apply_hashline_edit(
         start_line: 1-indexed line number to start the edit.
         start_hash: Expected 2-char hash of the start line.
         new_content: Replacement text (empty string = delete).
-        end_line: 1-indexed end of range (inclusive).  ``None`` for single-line.
+        end_line: 1-indexed end of range (inclusive).  `None` for single-line.
         end_hash: Expected 2-char hash of the end line.
-        insert_after: If ``True``, insert *after* ``start_line`` instead of
+        insert_after: If `True`, insert *after* `start_line` instead of
             replacing it.
 
     Returns:
-        ``(new_file_content, error)``.  *error* is ``None`` on success.
+        `(new_file_content, error)`.  *error* is `None` on success.
     """
     result, error, _ = _apply_hashline_edit_impl(
         content,
@@ -158,7 +158,7 @@ def apply_hashline_edit_with_summary(
     """Like :func:`apply_hashline_edit` but also returns a human-readable summary.
 
     Returns:
-        ``(new_file_content, error, summary)``.
+        `(new_file_content, error, summary)`.
     """
     return _apply_hashline_edit_impl(
         content,
@@ -183,7 +183,7 @@ def _apply_hashline_edit_impl(
     """Core implementation for hashline edits.
 
     Returns:
-        ``(new_file_content, error, summary)``.
+        `(new_file_content, error, summary)`.
     """
     lines, has_trailing_newline = _split_lines(content)
     total_lines = len(lines)
@@ -191,6 +191,12 @@ def _apply_hashline_edit_impl(
     # --- validate start line ---
     if start_line < 1 or start_line > total_lines:
         return content, (f"Line {start_line} out of range (file has {total_lines} lines)"), ""
+
+    # insert_after inserts at a single point and ignores any range, so a caller
+    # supplying end_line/end_hash would be silently misled into thinking a range
+    # was honored. Reject the combination instead.
+    if insert_after and (end_line is not None or end_hash is not None):
+        return content, "end_line/end_hash cannot be combined with insert_after", ""
 
     actual_start_hash = line_hash(lines[start_line - 1])
     if actual_start_hash != start_hash:

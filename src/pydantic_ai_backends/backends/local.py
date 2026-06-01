@@ -170,7 +170,7 @@ class LocalBackend:
             return None
 
         from pydantic_ai_backends.permissions.checker import (
-            PermissionError,
+            PermissionAskError,
         )
 
         action = self._permission_checker.check_sync(operation, target)
@@ -185,7 +185,7 @@ class LocalBackend:
         if self._ask_fallback == "deny":
             return f"Permission denied for {operation} on '{target}' (approval required)"
         # ask_fallback == "error"
-        raise PermissionError(operation, target, "Approval required but no callback")
+        raise PermissionAskError(operation, target, "Approval required but no callback")
 
     def _validate_path(self, path: str) -> Path:
         """Validate and resolve path within allowed directories.
@@ -223,21 +223,21 @@ class LocalBackend:
     def exists(self, path: str) -> bool:
         """Check whether a file exists on the filesystem.
 
-        Returns ``False`` for: missing files, directories, paths outside
+        Returns `False` for: missing files, directories, paths outside
         the allowed directory set, and any other invalid path the
         filesystem refuses to stat. The protocol contract is "invalid
         paths, directories, and permission errors all return False" —
         callers needing to distinguish those reasons should use
-        ``ls_info()``.
+        `ls_info()`.
 
         Exception sources:
-        - ``PermissionError`` from ``_validate_path`` when the resolved
+        - `PermissionError` from `_validate_path` when the resolved
           path escapes the allowed directory set.
-        - ``ValueError`` from ``Path.is_file()`` on paths the OS rejects
+        - `ValueError` from `Path.is_file()` on paths the OS rejects
           before it can stat them (notably embedded null bytes — POSIX
           rejects them at the syscall boundary).
-        - ``OSError`` covers the remaining edge cases (filename too long,
-          ELOOP on a symlink cycle, etc.). ``Path.is_file()`` swallows
+        - `OSError` covers the remaining edge cases (filename too long,
+          ELOOP on a symlink cycle, etc.). `Path.is_file()` swallows
           most of these already; the explicit catch is belt-and-braces.
         """
         try:
@@ -656,12 +656,12 @@ class LocalBackend:
     async def async_execute(self, command: str, timeout: int | None = None) -> ExecuteResponse:
         """Async, cancellable version of execute().
 
-        Uses ``asyncio.create_subprocess_exec`` so that cancelling the calling
+        Uses `asyncio.create_subprocess_exec` so that cancelling the calling
         task immediately kills the subprocess rather than waiting for a thread
         to finish. On Unix, the subprocess runs in its own session so the entire
         process tree (including any grandchildren the shell forked) is reaped
         on cancellation or timeout. Defaults to a 120-second timeout when
-        ``timeout`` is ``None``.
+        `timeout` is `None`.
         """
         if not self._enable_execute:
             raise RuntimeError(
@@ -724,9 +724,9 @@ class LocalBackend:
     def _kill_proc_tree(proc: asyncio.subprocess.Process) -> None:
         """Kill the subprocess and (on Unix) every grandchild it forked.
 
-        On Unix the process is launched with ``start_new_session=True``, so we
-        can ``killpg`` the whole tree. On Windows ``proc.kill()`` is sufficient
-        because ``cmd /c`` already terminates child processes when it dies.
+        On Unix the process is launched with `start_new_session=True`, so we
+        can `killpg` the whole tree. On Windows `proc.kill()` is sufficient
+        because `cmd /c` already terminates child processes when it dies.
         """
         if sys.platform == "win32":
             with contextlib.suppress(ProcessLookupError):

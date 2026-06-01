@@ -26,6 +26,7 @@ result = agent.run_sync("Create hello.py and run it", deps=Deps(backend=backend)
 |--------|-------------|
 | [Backends](backends.md) | LocalBackend, StateBackend, CompositeBackend |
 | [Docker](docker.md) | DockerSandbox, SessionManager, RuntimeConfig |
+| [Daytona](daytona.md) | DaytonaSandbox cloud sandbox |
 | [Toolsets](toolsets.md) | Console toolset for pydantic-ai |
 | [Types](types.md) | Type definitions |
 
@@ -74,31 +75,27 @@ from pydantic_ai_backends import (
 
 ### BackendProtocol
 
-All backends implement this interface:
+All backends implement this interface.
 
-```python
-class BackendProtocol(Protocol):
-    def ls_info(self, path: str) -> list[FileInfo]: ...
-    def read(self, path: str, offset: int = 0, limit: int = 2000) -> str: ...
-    def write(self, path: str, content: str | bytes) -> WriteResult: ...
-    def edit(self, path: str, old: str, new: str, replace_all: bool = False) -> EditResult: ...
-    def glob_info(self, pattern: str, path: str = ".") -> list[FileInfo]: ...
-    def grep_raw(
-        self,
-        pattern: str,
-        path: str | None = None,
-        glob: str | None = None,
-        ignore_hidden: bool = True,
-    ) -> list[GrepMatch] | str: ...
-```
+::: pydantic_ai_backends.protocol.BackendProtocol
+    options:
+      show_root_heading: true
+      members:
+        - ls_info
+        - read_bytes
+        - read
+        - write
+        - edit
+        - glob_info
+        - grep_raw
 
 ### SandboxProtocol
 
-Extends BackendProtocol with execution:
+Extends [`BackendProtocol`][pydantic_ai_backends.protocol.BackendProtocol] with command execution.
 
-```python
-class SandboxProtocol(BackendProtocol, Protocol):
-    def execute(self, command: str, timeout: int | None = None) -> ExecuteResponse: ...
-    @property
-    def id(self) -> str: ...
-```
+::: pydantic_ai_backends.protocol.SandboxProtocol
+    options:
+      show_root_heading: true
+      members:
+        - execute
+        - id

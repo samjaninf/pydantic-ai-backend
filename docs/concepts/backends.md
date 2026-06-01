@@ -203,7 +203,7 @@ from pydantic_ai_backends import CompositeBackend, StateBackend, DockerSandbox
 backend = CompositeBackend(
     default=StateBackend(),
     routes={
-        "/sandbox/": DockerSandbox(runtime="python"),
+        "/sandbox/": DockerSandbox(runtime="python-minimal"),
         "/sandbox/data/": StateBackend(),  # Longer prefix wins
     },
 )
@@ -318,50 +318,20 @@ backend = CompositeBackend(
 
 ## Backend Protocol
 
-All backends implement this interface:
+All backends implement the
+[`BackendProtocol`][pydantic_ai_backends.protocol.BackendProtocol] interface:
+`ls_info`, `read_bytes`, `read`, `write`, `edit`, `glob_info`, and `grep_raw`.
 
-```python
-class BackendProtocol(Protocol):
-    def ls_info(self, path: str) -> list[FileInfo]:
-        """List directory contents."""
-        ...
+### Execute (sandbox backends)
 
-    def read(self, path: str, offset: int = 0, limit: int = 2000) -> str:
-        """Read file with line numbers."""
-        ...
+Sandbox backends such as [`DockerSandbox`][pydantic_ai_backends.backends.docker.sandbox.DockerSandbox]
+and [`DaytonaSandbox`][pydantic_ai_backends.backends.daytona.DaytonaSandbox]
+additionally implement
+[`SandboxProtocol`][pydantic_ai_backends.protocol.SandboxProtocol], which extends
+`BackendProtocol` with an `execute(command, timeout)` method and an `id` property.
 
-    def write(self, path: str, content: str | bytes) -> WriteResult:
-        """Write file contents."""
-        ...
-
-    def edit(
-        self, path: str, old_string: str, new_string: str, replace_all: bool = False
-    ) -> EditResult:
-        """Edit file by replacing strings."""
-        ...
-
-    def glob_info(self, pattern: str, path: str = ".") -> list[FileInfo]:
-        """Find files matching glob pattern."""
-        ...
-
-    def grep_raw(
-        self,
-        pattern: str,
-        path: str | None = None,
-        glob: str | None = None,
-        ignore_hidden: bool = True,
-    ) -> list[GrepMatch] | str:
-        """Search file contents with regex."""
-        ...
-```
-
-### Execute (LocalBackend, DockerSandbox)
-
-```python
-def execute(self, command: str, timeout: int | None = None) -> ExecuteResponse:
-    """Execute a shell command."""
-    ...
-```
+See the [API Reference](../api/index.md#protocols) for the full rendered
+protocol signatures.
 
 ## Path Security
 

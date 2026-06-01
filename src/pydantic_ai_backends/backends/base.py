@@ -145,7 +145,7 @@ class BaseSandbox(ABC):
         ...
 
     def exists(self, path: str) -> bool:  # pragma: no cover
-        """Check existence via ``test -f`` in the sandbox shell."""
+        """Check existence via `test -f` in the sandbox shell."""
         result = self.execute(f"test -f {shlex.quote(path)}", timeout=5)
         return result.exit_code == 0
 
@@ -185,23 +185,36 @@ class BaseSandbox(ABC):
         return sorted(entries, key=lambda x: (not x["is_dir"], x["name"]))
 
     def read_bytes(self, path: str) -> bytes:  # pragma: no cover
-        """Read raw bytes from file using cat command."""
+        """Read raw bytes from a file using the cat command.
+
+        Returns empty bytes on failure (missing file, permission denied, etc.)
+        to match LocalBackend/StateBackend, rather than encoding an error
+        message into the returned payload (which a caller could not
+        distinguish from real file content beginning with "[Error:").
+        """
         path = shlex.quote(path)
         result = self.execute(f"cat {path}")
 
         if result.exit_code != 0:
-            return f"[Error: {result.output}]".encode()
+            return b""
 
         return result.output.encode("utf-8", errors="replace")
 
     def read(self, path: str, offset: int = 0, limit: int = 2000) -> str:  # pragma: no cover
-        """Read file using cat command with line numbers."""
-        # Use sed to handle offset and limit
-        start = offset + 1  # sed is 1-indexed
+        """Read file using awk with real file line numbers.
+
+        Line numbers reflect the original file positions (starting at
+        `offset + 1`), matching StateBackend/LocalBackend. A plain
+        `sed ... | cat -n` would renumber the slice from 1 and be off by
+        `offset`.
+        """
+        start = offset + 1  # 1-indexed
         end = offset + limit
 
         path = shlex.quote(path)
-        result = self.execute(f"sed -n '{start},{end}p' {path} | cat -n")
+        result = self.execute(
+            f"awk 'NR>={start} && NR<={end} {{ printf \"%6d\\t%s\\n\", NR, $0 }}' {path}"
+        )
 
         if result.exit_code != 0:
             return f"Error: {result.output}"
@@ -212,17 +225,20 @@ class BaseSandbox(ABC):
         return result.output
 
     def write(self, path: str, content: str) -> WriteResult:  # pragma: no cover
-        """Write file using cat with heredoc."""
-        # Escape special characters for heredoc
-        escaped = content.replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`")
+        """Write file using cat with a quoted heredoc.
 
-        # Use a unique delimiter
+        The heredoc delimiter is quoted (`<< 'DELIM'`) so the shell performs
+        no expansion inside the body; the content is therefore written
+        verbatim with no escaping. Pre-escaping backslash/$/backtick here would
+        corrupt the content (doubled backslashes, literal `\\$` etc.).
+        """
+        # Use a unique random delimiter to avoid colliding with a body line.
         delimiter = f"EOF_{uuid.uuid4().hex[:8]}"
 
         quoted_path = shlex.quote(path)
         command = (
             f"mkdir -p $(dirname {quoted_path}) && cat > {quoted_path} << '{delimiter}'\n"
-            f"{escaped}\n"
+            f"{content}\n"
             f"{delimiter}"
         )
         result = self.execute(command)
@@ -233,10 +249,16 @@ class BaseSandbox(ABC):
         return WriteResult(path=path)
 
     def glob_info(self, pattern: str, path: str = "/") -> list[FileInfo]:  # pragma: no cover
-        """Find files using find command."""
-        # Convert glob to find pattern
-        path = shlex.quote(path)
-        result = self.execute(f"find '{path}' -path '{pattern}' -type f 2>/dev/null")
+        """Find files using the find command.
+
+        The path is shlex-quoted exactly once (not re-wrapped in single
+        quotes). The pattern is matched with `-path '*/{pattern}'` so that
+        basename globs like `*.py` match files anywhere under the search
+        root, since `find -path` matches the whole pathname.
+        """
+        quoted_path = shlex.quote(path)
+        quoted_pattern = shlex.quote(f"*/{pattern}")
+        result = self.execute(f"find {quoted_path} -path {quoted_pattern} -type f 2>/dev/null")
 
         if result.exit_code != 0:
             return []

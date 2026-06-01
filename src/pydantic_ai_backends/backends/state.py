@@ -311,7 +311,10 @@ class StateBackend:
                 return f"Error: {error}"
             path = _normalize_path(path)
 
-            if path in files:
+            # An explicitly named file is searched even when hidden: look it up
+            # in the full file set, not the ignore_hidden-filtered view. The
+            # filter only applies to directory walks below.
+            if path in self._files:
                 files_to_search = [path]
             else:
                 # Path is a directory - search all files under it
@@ -329,9 +332,11 @@ class StateBackend:
                 if wcglob.globmatch(f, glob_pattern, flags=wcglob.GLOBSTAR)
             ]
 
-        # Search each file
+        # Search each file. Index into the full file set so an explicitly
+        # named hidden file (added to files_to_search above) is found even
+        # when ignore_hidden filtered it out of the directory-walk view.
         for file_path in files_to_search:
-            lines = files[file_path]["content"]
+            lines = self._files[file_path]["content"]
             for i, line in enumerate(lines):
                 if regex.search(line):
                     results.append(

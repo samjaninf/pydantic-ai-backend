@@ -14,14 +14,14 @@ class CompositeBackend:
 
     Note:
         Routes are matched using exact-or-child semantics: a path matches a prefix
-        if it equals the prefix exactly or starts with ``prefix + "/"``.
+        if it equals the prefix exactly or starts with `prefix + "/"`.
         Paths are passed to the matched backend **as-is** (no prefix stripping),
         so each backend must accept the full virtual path.
 
-        ``StateBackend`` accepts any virtual path, making it the natural choice for
-        routes. ``LocalBackend`` validates paths against its ``root_dir`` and will
+        `StateBackend` accepts any virtual path, making it the natural choice for
+        routes. `LocalBackend` validates paths against its `root_dir` and will
         reject virtual paths that differ from the real filesystem path — use it as
-        the **default** backend, not inside ``routes``.
+        the **default** backend, not inside `routes`.
 
     Example:
         ```python
@@ -162,18 +162,22 @@ class CompositeBackend:
         if path is None or path == "/" or path == "":
             all_results: list[GrepMatch] = []
 
-            # Search in default backend
+            # Search in default backend. Propagate an error string (e.g. an
+            # invalid regex) instead of silently dropping it, so callers can
+            # tell "no matches" apart from "search failed".
             result = self._default.grep_raw(pattern, path, glob, ignore_hidden)
             if isinstance(result, list):
                 all_results.extend(result)
-            elif isinstance(result, str) and result.startswith("Error"):
-                pass  # Ignore errors from individual backends
+            else:
+                return result
 
             # Search in each routed backend
             for prefix, backend in self._routes.items():
                 result = backend.grep_raw(pattern, prefix, glob, ignore_hidden)
                 if isinstance(result, list):
                     all_results.extend(result)
+                else:
+                    return result
 
             return all_results
 

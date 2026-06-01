@@ -6,6 +6,7 @@ using LocalBackend with pydantic-ai.
 Requires: pip install pydantic-ai-backend[console]
 """
 
+import argparse
 import asyncio
 import os
 from dataclasses import dataclass
@@ -124,7 +125,6 @@ Example commands:
 
 def main() -> None:
     """Main entry point."""
-    import argparse
 
     parser = argparse.ArgumentParser(description="CLI Agent with file operations")
     parser.add_argument(

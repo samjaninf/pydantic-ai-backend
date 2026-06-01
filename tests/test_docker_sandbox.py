@@ -429,7 +429,7 @@ class TestDockerSandboxFilePathResolution:
 
     @pytest.mark.docker
     def test_exists_returns_false_for_directory(self, docker_sandbox):
-        """exists() returns False for directories — ``test -f`` fails on dirs."""
+        """exists() returns False for directories — `test -f` fails on dirs."""
         # /workspace is the work_dir, guaranteed to be a directory.
         assert docker_sandbox.exists("/workspace") is False
 
@@ -452,3 +452,73 @@ class TestDockerSandboxNetworkMode:
             assert result.exit_code != 0
         finally:
             sandbox.stop()
+
+
+class TestBuildDockerfile:
+    """Tests for Dockerfile generation and input validation (no Docker needed)."""
+
+    def _build(self, **kwargs):
+        from pydantic_ai_backends.backends.docker.sandbox import _build_dockerfile
+        from pydantic_ai_backends.types import RuntimeConfig
+
+        kwargs.setdefault("name", "test")
+        kwargs.setdefault("base_image", "python:3.12-slim")
+        return _build_dockerfile(RuntimeConfig(**kwargs))
+
+    def test_basic_pip_runtime(self):
+        dockerfile = self._build(packages=["pandas", "numpy"])
+        assert "FROM python:3.12-slim" in dockerfile
+        assert "RUN pip install --no-cache-dir pandas numpy" in dockerfile
+        assert "WORKDIR /workspace" in dockerfile
+
+    def test_npm_installs_locally_not_global(self):
+        """npm packages install into the work_dir, not globally (-g)."""
+        dockerfile = self._build(
+            packages=["react", "react-dom"],
+            package_manager="npm",
+            work_dir="/app",
+        )
+        assert "npm install react react-dom" in dockerfile
+        assert "npm install -g" not in dockerfile
+
+    def test_apt_and_cargo(self):
+        apt = self._build(packages=["curl"], package_manager="apt")
+        assert "apt-get update && apt-get install -y curl" in apt
+        cargo = self._build(packages=["ripgrep"], package_manager="cargo")
+        assert "cargo install ripgrep" in cargo
+
+    def test_env_vars_quoted(self):
+        dockerfile = self._build(env_vars={"FOO": "bar baz"})
+        assert "ENV FOO='bar baz'" in dockerfile
+
+    def test_rejects_package_command_injection(self):
+        with pytest.raises(ValueError, match="Invalid package name"):
+            self._build(packages=["foo; rm -rf /"])
+
+    def test_rejects_empty_package(self):
+        with pytest.raises(ValueError, match="Invalid package name"):
+            self._build(packages=[""])
+
+    def test_rejects_env_value_newline(self):
+        with pytest.raises(ValueError, match="newline"):
+            self._build(env_vars={"FOO": "line1\nRUN evil"})
+
+    def test_rejects_env_key(self):
+        with pytest.raises(ValueError, match="environment variable name"):
+            self._build(env_vars={"BAD KEY": "value"})
+
+    def test_rejects_workdir_metacharacters(self):
+        with pytest.raises(ValueError, match="work_dir"):
+            self._build(work_dir="/app; rm -rf /")
+
+    def test_rejects_setup_command_newline(self):
+        with pytest.raises(ValueError, match="setup command"):
+            self._build(setup_commands=["echo hi\nRUN evil"])
+
+    def test_setup_command_emitted(self):
+        dockerfile = self._build(setup_commands=["echo hello"])
+        assert "RUN echo hello" in dockerfile
+
+    def test_scoped_npm_package_allowed(self):
+        dockerfile = self._build(packages=["@types/react"], package_manager="npm", work_dir="/app")
+        assert "@types/react" in dockerfile
