@@ -344,7 +344,6 @@ class TestLocalBackendAsyncExecute:
         if sys.platform == "win32":
             pytest.skip("Process-group semantics are Unix-specific")
 
-
         backend = LocalBackend(root_dir=tmp_path)
 
         # Write the grandchild's PID to a file before sleeping so we can verify

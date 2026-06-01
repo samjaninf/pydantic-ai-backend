@@ -15,12 +15,10 @@ from pydantic_ai.messages import ToolCallPart
 
 
 def _make_ctx():
-
     return RunContext(deps=None, model=TestModel(), usage=RunUsage())
 
 
 def _make_call(tool_name):
-
     return ToolCallPart(tool_name=tool_name, args={}, tool_call_id="test")
 
 
