@@ -6,6 +6,9 @@ from pathlib import Path
 import pytest
 
 from pydantic_ai_backends import LocalBackend
+import sys
+import os
+from unittest.mock import MagicMock
 
 
 class TestLocalBackendInit:
@@ -337,12 +340,10 @@ class TestLocalBackendAsyncExecute:
 
     async def test_async_execute_cancel_kills_grandchildren(self, tmp_path: Path):
         """On Unix, cancelling must reap the entire process group, not just the shell."""
-        import sys
 
         if sys.platform == "win32":
             pytest.skip("Process-group semantics are Unix-specific")
 
-        import os
 
         backend = LocalBackend(root_dir=tmp_path)
 
@@ -380,7 +381,6 @@ class TestKillProcTree:
 
     def test_kill_proc_tree_windows_calls_proc_kill(self, monkeypatch: pytest.MonkeyPatch):
         """On Windows, _kill_proc_tree delegates to proc.kill() directly."""
-        from unittest.mock import MagicMock
 
         import pydantic_ai_backends.backends.local as local_mod
 
@@ -393,7 +393,6 @@ class TestKillProcTree:
         self, monkeypatch: pytest.MonkeyPatch
     ):
         """ProcessLookupError from a race with a process that already exited is suppressed."""
-        from unittest.mock import MagicMock
 
         import pydantic_ai_backends.backends.local as local_mod
 

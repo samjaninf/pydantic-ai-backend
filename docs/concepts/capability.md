@@ -12,7 +12,12 @@ tools, instructions, and permission enforcement.
 | System prompt injected | Yes | Manual |
 | Permission enforcement (deny) | Yes (`prepare_tools`) | Only `requires_approval` |
 | Per-path permission checks | Yes (`before_tool_execute`) | No |
-| Fixes issue #23 (READONLY) | Yes | No |
+| Tools for denied operations hidden from the model | Yes | No |
+
+A plain toolset created with a read-only ruleset can still surface
+`write_file`/`edit_file`/`execute` to the model and only block them on call.
+`ConsoleCapability` removes denied tools entirely via `prepare_tools`, so the
+model never sees operations it is not allowed to perform.
 
 ## Basic Usage
 
@@ -48,3 +53,81 @@ agent = Agent("openai:gpt-4.1", capabilities=[
 2. **`before_tool_execute`** — checks per-path permissions before each tool call.
    If a specific path is denied (e.g., `.env` files), the call is blocked even if
    the operation is generally allowed.
+
+## Constructor Parameters
+
+[`ConsoleCapability`][pydantic_ai_backends.ConsoleCapability] is a dataclass with
+three fields:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `include_execute` | `bool` | `True` | Whether to register the `execute` shell tool. |
+| `edit_format` | `"str_replace" \| "hashline"` | `"str_replace"` | File-editing format. `"hashline"` registers `hashline_edit` instead of `edit_file` and changes the injected instructions. See [Hashline Edit Format](console-toolset.md#hashline-edit-format). |
+| `permissions` | `PermissionRuleset \| None` | `None` | Ruleset controlling which operations are allowed, asked, or denied. When `None`, all tools are exposed and no permission checks run. |
+
+```python
+from pydantic_ai_backends import ConsoleCapability
+from pydantic_ai_backends.permissions import DEFAULT_RULESET
+
+capability = ConsoleCapability(
+    include_execute=True,
+    edit_format="hashline",
+    permissions=DEFAULT_RULESET,
+)
+```
+
+## Tools Registered
+
+The capability builds a console toolset via
+[`create_console_toolset`][pydantic_ai_backends.create_console_toolset] and
+exposes it through `get_toolset()`:
+
+- `ls`, `read_file`, `write_file`, `glob`, `grep`
+- `edit_file` (when `edit_format="str_replace"`) **or** `hashline_edit` (when `edit_format="hashline"`)
+- `execute` (only when `include_execute=True`)
+
+It also injects tool-usage instructions through `get_instructions()`, calling
+[`get_console_system_prompt`][pydantic_ai_backends.get_console_system_prompt]
+with the configured `edit_format` — so you do not need to add the console system
+prompt to your agent manually.
+
+## Where the Backend Comes From
+
+`ConsoleCapability` does not take a backend. The console tools read
+`ctx.deps.backend` at runtime, so your dependencies object must satisfy the
+[`ConsoleDeps`](console-toolset.md#consoledeps-protocol) protocol (any class
+exposing a `backend` attribute). This lets a single agent serve different
+backends per run — for example a different
+[`DockerSandbox`][pydantic_ai_backends.backends.docker.sandbox.DockerSandbox]
+per user — without rebuilding the agent.
+
+```python
+from dataclasses import dataclass
+from pydantic_ai import Agent
+from pydantic_ai_backends import ConsoleCapability, LocalBackend
+
+@dataclass
+class Deps:
+    backend: LocalBackend
+
+agent = Agent("openai:gpt-4.1", deps_type=Deps, capabilities=[ConsoleCapability()])
+
+result = agent.run_sync(
+    "List the Python files",
+    deps=Deps(backend=LocalBackend(root_dir="/workspace")),
+)
+```
+
+## Relationship to Other Features
+
+- **Permissions** — the `permissions` ruleset drives both tool hiding
+  (`prepare_tools`) and per-path/command checks (`before_tool_execute`). See
+  [Permissions](permissions.md).
+- **Edit format** — `edit_format` is forwarded to the underlying toolset and
+  controls which edit tool is registered and which instructions are injected.
+  See [Hashline Edit Format](console-toolset.md#hashline-edit-format).
+- **Image support** — `image_support` is a `create_console_toolset` option, not
+  a `ConsoleCapability` field. If you need multimodal image reading, build the
+  toolset directly with
+  [`create_console_toolset(image_support=True)`][pydantic_ai_backends.create_console_toolset]
+  instead of using the capability.

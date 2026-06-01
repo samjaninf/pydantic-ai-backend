@@ -1,6 +1,7 @@
 """Tests for backend implementations."""
 
 from pydantic_ai_backends import CompositeBackend, LocalBackend, StateBackend
+import pytest
 
 
 class TestStateBackend:
@@ -144,7 +145,7 @@ class TestStateBackend:
 
     def test_exists_distinguishes_empty_file_from_missing(self):
         """An empty file exists; a missing one does not — even though both
-        round-trip through ``read_bytes`` as ``b""``."""
+        round-trip through `read_bytes` as `b""`."""
         backend = StateBackend()
         backend.write("/empty.txt", "")
         assert backend.exists("/empty.txt") is True
@@ -434,7 +435,6 @@ class TestLocalBackend:
 
     def test_execute_disabled(self, tmp_path):
         """Test that execute raises error when disabled."""
-        import pytest
 
         backend = LocalBackend(root_dir=tmp_path, enable_execute=False)
 

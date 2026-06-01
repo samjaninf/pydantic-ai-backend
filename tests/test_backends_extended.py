@@ -197,6 +197,17 @@ class TestStateBackendExtended:
         paths = {match["path"] for match in results}
         assert paths == {"/.hidden.txt"}
 
+    def test_grep_raw_explicit_hidden_path_is_searched(self):
+        """An explicitly named hidden file is searched even with ignore_hidden."""
+        backend = StateBackend()
+        backend.write("/.env", "secret")
+
+        # Default ignore_hidden=True, but the file is named directly.
+        results = backend.grep_raw("secret", "/.env")
+        assert isinstance(results, list)
+        paths = {match["path"] for match in results}
+        assert paths == {"/.env"}
+
 
 class TestLocalBackendExtended:
     """Extended tests for LocalBackend."""
@@ -422,6 +433,33 @@ class TestCompositeBackendExtended:
         assert isinstance(results, list)
         assert len(results) == 2
 
+    def test_grep_raw_from_root_propagates_default_error(self):
+        """An invalid regex error from the default backend is propagated."""
+        composite = CompositeBackend(
+            default=StateBackend(),
+            routes={"/special/": StateBackend()},
+        )
+
+        result = composite.grep_raw("[invalid", "/")
+        assert isinstance(result, str)
+        assert result.startswith("Error")
+
+    def test_grep_raw_from_root_propagates_routed_error(self):
+        """An error from a routed backend is propagated, not swallowed."""
+
+        class _FailingBackend(StateBackend):
+            def grep_raw(self, *args: object, **kwargs: object):  # type: ignore[override]
+                return "Error: routed search failed"
+
+        composite = CompositeBackend(
+            default=StateBackend(),
+            routes={"/special/": _FailingBackend()},
+        )
+
+        result = composite.grep_raw("anything", "/")
+        assert isinstance(result, str)
+        assert "routed search failed" in result
+
     def test_grep_raw_from_specific_path(self):
         """Test grep_raw from specific path."""
         default = StateBackend()
@@ -487,7 +525,7 @@ class TestCompositeBackendExtended:
         assert isinstance(results, list)
 
     def test_grep_raw_with_error_from_default(self):
-        """Test grep_raw when default returns error."""
+        """Test grep_raw propagates an error from the default backend."""
         default = StateBackend()
         special = StateBackend()
 
@@ -498,10 +536,11 @@ class TestCompositeBackendExtended:
             routes={"/special/": special},
         )
 
-        # grep_raw should still return results from routed backends
-        results = composite.grep_raw("[invalid", "/")  # Invalid regex
-        # Should return whatever we can, ignoring errors
-        assert isinstance(results, list)
+        # An error (e.g. invalid regex) is propagated rather than swallowed, so
+        # callers can tell "no matches" apart from "search failed".
+        result = composite.grep_raw("[invalid", "/")  # Invalid regex
+        assert isinstance(result, str)
+        assert result.startswith("Error")
 
     def test_glob_info_empty_root(self):
         """Test glob_info on empty root path."""

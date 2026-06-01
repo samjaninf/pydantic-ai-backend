@@ -259,8 +259,10 @@ class TestDaytonaSandboxReadBytes:
         sandbox = _make_sandbox()
         sandbox._sandbox.fs.download_files = MagicMock(side_effect=RuntimeError("download failed"))
 
+        # On failure read_bytes returns empty bytes (not an error sentinel)
+        # so callers cannot mistake an error message for file content.
         data = sandbox.read_bytes("/missing.txt")
-        assert data.startswith(b"[Error:")
+        assert data == b""
 
 
 class TestDaytonaSandboxExists:
@@ -325,6 +327,7 @@ class TestDaytonaSandboxWrite:
 class TestDaytonaSandboxEdit:
     def test_edit_single_occurrence(self) -> None:
         sandbox = _make_sandbox()
+        sandbox._sandbox.fs._file_infos = {"/f.py": FakeFileInfo(name="f.py", is_dir=False, size=7)}
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/f.py", result="foo = 1")
         ]
@@ -337,6 +340,7 @@ class TestDaytonaSandboxEdit:
 
     def test_edit_not_found(self) -> None:
         sandbox = _make_sandbox()
+        sandbox._sandbox.fs._file_infos = {"/f.py": FakeFileInfo(name="f.py", is_dir=False, size=7)}
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/f.py", result="foo = 1")
         ]
@@ -346,6 +350,9 @@ class TestDaytonaSandboxEdit:
 
     def test_edit_multiple_without_replace_all(self) -> None:
         sandbox = _make_sandbox()
+        sandbox._sandbox.fs._file_infos = {
+            "/f.py": FakeFileInfo(name="f.py", is_dir=False, size=11)
+        }
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/f.py", result="foo foo foo")
         ]
@@ -356,6 +363,7 @@ class TestDaytonaSandboxEdit:
 
     def test_edit_replace_all(self) -> None:
         sandbox = _make_sandbox()
+        sandbox._sandbox.fs._file_infos = {"/f.py": FakeFileInfo(name="f.py", is_dir=False, size=7)}
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/f.py", result="foo foo")
         ]
@@ -366,26 +374,27 @@ class TestDaytonaSandboxEdit:
         assert result.path == "/f.py"
         assert result.occurrences == 2
 
+    def test_edit_file_not_found(self) -> None:
+        """Editing a file that does not exist reports a not-found error."""
+        sandbox = _make_sandbox()
+        # _file_infos is empty by default, so exists() returns False.
+        result = sandbox.edit("/missing.py", "a", "b")
+        assert result.error is not None
+        assert "not found" in result.error
+
     def test_edit_read_error(self) -> None:
         sandbox = _make_sandbox()
+        sandbox._sandbox.fs._file_infos = {"/f.py": FakeFileInfo(name="f.py", is_dir=False, size=1)}
         sandbox._sandbox.fs.download_files = MagicMock(side_effect=RuntimeError("read fail"))
 
+        # read_bytes swallows the error and returns b"", so the edit reports
+        # that the search string was not found in the (empty) content.
         result = sandbox.edit("/f.py", "a", "b")
-        assert result.error is not None
-        assert "read fail" in result.error
-
-    def test_edit_read_bytes_returns_error_bytes(self) -> None:
-        sandbox = _make_sandbox()
-        sandbox._sandbox.fs._download_responses = [
-            FakeDownloadResponse(source="/f.py", result="[Error: not found]")
-        ]
-
-        result = sandbox.edit("/f.py", "a", "b")
-        assert result.error is not None
-        assert "Error" in result.error
+        assert result.error == "String not found in file"
 
     def test_edit_write_error(self) -> None:
         sandbox = _make_sandbox()
+        sandbox._sandbox.fs._file_infos = {"/f.py": FakeFileInfo(name="f.py", is_dir=False, size=8)}
         sandbox._sandbox.fs._download_responses = [
             FakeDownloadResponse(source="/f.py", result="old text")
         ]

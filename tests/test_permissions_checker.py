@@ -3,6 +3,7 @@
 import pytest
 
 from pydantic_ai_backends.permissions.checker import (
+    PermissionAskError,
     PermissionChecker,
     PermissionDeniedError,
     PermissionError,
@@ -54,13 +55,18 @@ class TestGlobToRegex:
         assert regex.match("file3.txt")
         assert not regex.match("file4.txt")
 
-    def test_character_class_with_exclaim(self):
-        """Test character class with ! prefix (passed through as-is to regex)."""
-        # Note: In glob, [!abc] means negation, but we pass it as-is
-        # which in regex [!123] means match !, 1, 2, or 3
+    def test_character_class_with_exclaim_negates(self):
+        """Glob `[!abc]` negation maps to regex `[^abc]` (any char except)."""
         regex = _glob_to_regex("file[!123].txt")
+        # Negation: anything except 1, 2, 3 matches (including '!' itself,
+        # which is not one of the negated characters).
+        assert regex.match("file4.txt")
+        assert regex.match("fileA.txt")
         assert regex.match("file!.txt")
-        assert regex.match("file1.txt")
+        # The negated characters themselves do not match.
+        assert not regex.match("file1.txt")
+        assert not regex.match("file2.txt")
+        assert not regex.match("file3.txt")
 
     def test_negated_character_class_caret(self):
         """Test [^abc] negated character class."""
@@ -311,7 +317,7 @@ class TestPermissionCheckerAsync:
         )
         checker = PermissionChecker(ruleset, ask_fallback="error")
 
-        with pytest.raises(PermissionError) as exc_info:
+        with pytest.raises(PermissionAskError) as exc_info:
             await checker.check("write", "/file.txt", "Save changes")
 
         assert exc_info.value.operation == "write"
@@ -334,17 +340,25 @@ class TestPermissionErrors:
     """Tests for permission error classes."""
 
     def test_permission_error_message(self):
-        """Test PermissionError message formatting."""
-        error = PermissionError("write", "/file.txt", "Save changes")
+        """Test PermissionAskError message formatting."""
+        error = PermissionAskError("write", "/file.txt", "Save changes")
         assert "write" in str(error)
         assert "/file.txt" in str(error)
         assert "Save changes" in str(error)
 
     def test_permission_error_no_reason(self):
-        """Test PermissionError without reason."""
-        error = PermissionError("read", "/file.txt")
+        """Test PermissionAskError without reason."""
+        error = PermissionAskError("read", "/file.txt")
         assert "read" in str(error)
         assert "/file.txt" in str(error)
+
+    def test_permission_error_deprecated_alias(self):
+        """The legacy `PermissionError` name is a deprecated subclass alias."""
+        with pytest.warns(DeprecationWarning):
+            error = PermissionError("read", "/file.txt")
+        # Instances of the deprecated alias are still PermissionAskError.
+        assert isinstance(error, PermissionAskError)
+        assert "read" in str(error)
 
     def test_permission_denied_error_message(self):
         """Test PermissionDeniedError message formatting."""

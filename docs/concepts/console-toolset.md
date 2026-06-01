@@ -62,7 +62,15 @@ toolset = create_console_toolset(id="my-console")
 
 # Include hidden files by default for grep
 toolset = create_console_toolset(default_ignore_hidden=False)
+
+# Use the hashline edit format instead of exact string replacement
+toolset = create_console_toolset(edit_format="hashline")
 ```
+
+The `edit_format` parameter selects how the model edits files. The default
+`"str_replace"` exposes an `edit_file` tool that does exact string matching.
+`"hashline"` swaps it for a `hashline_edit` tool — see [Hashline Edit
+Format](#hashline-edit-format) below.
 
 ## Custom Tool Descriptions
 
@@ -180,6 +188,44 @@ result = agent.run_sync(
     With text-only models, image data will be wasted tokens. When disabled (the default),
     reading an image file returns the raw text representation, which is not useful
     but avoids unexpected behavior.
+
+## Hashline Edit Format
+
+`edit_format="hashline"` is an alternative to the default `"str_replace"` edit
+format. Instead of reproducing the exact text it wants to change, the model
+references lines by a short content hash, which avoids whitespace-matching
+errors and reduces output tokens.
+
+```python
+toolset = create_console_toolset(edit_format="hashline")
+```
+
+With this format, `read_file` returns each line tagged as
+`{line_number}:{hash}|{content}`, where the hash is a 2-character hex digest of
+the line:
+
+```
+1:a3|def hello():
+2:f1|    return "world"
+3:0e|
+```
+
+The `edit_file` tool is replaced by **`hashline_edit`**, which the model calls
+with the `line:hash` pair of the anchor line plus the new content. It supports
+single-line replacement, range replacement (`end_line` + `end_hash`), inserting
+after a line (`insert_after=True`), and deletion (`new_content=""`). If a hash
+no longer matches, the file changed since the last read and the model must
+re-read before editing.
+
+!!! tip "Token / accuracy tradeoff"
+    Hashline trades a small amount of extra read-time output (the per-line hash
+    tags) for cheaper, more reliable edits: the model no longer has to echo back
+    long `old_string` blocks, so edit calls use fewer tokens and are less likely
+    to fail on whitespace mismatches. `str_replace` (the default) is simpler and
+    a better fit for models that have not been prompted for the hashline format.
+
+The matching system prompt for this mode is returned by
+[`get_console_system_prompt(edit_format="hashline")`][pydantic_ai_backends.get_console_system_prompt].
 
 ## ConsoleDeps Protocol
 

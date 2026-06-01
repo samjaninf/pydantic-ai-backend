@@ -97,7 +97,7 @@ Same toolset, different backends — swap based on your use case:
     from pydantic_ai_backends import SessionManager
 
     manager = SessionManager(workspace_root="/app/workspaces")
-    backend = await manager.get_or_create(user_id="alice")
+    backend = await manager.get_or_create("alice")
     ```
 
 ## Available Tools
@@ -119,9 +119,14 @@ Same toolset, different backends — swap based on your use case:
 | `LocalBackend` | Persistent | Yes | CLI tools, local dev |
 | `StateBackend` | Ephemeral | No | Testing, mocking |
 | `DockerSandbox` | Ephemeral* | Yes | Safe execution, multi-user |
+| `DaytonaSandbox` | Ephemeral | Yes | Cloud deployments, CI/CD, multi-user |
 | `CompositeBackend` | Mixed | Depends | Route by path prefix |
 
-*DockerSandbox supports persistent volumes via `workspace_root` parameter.
+*[`DockerSandbox`][pydantic_ai_backends.backends.docker.sandbox.DockerSandbox]
+supports persistent storage by mounting host directories with its `volumes`
+parameter (and `container_name` to reuse a named container across restarts).
+The [`SessionManager`][pydantic_ai_backends.backends.docker.session.SessionManager] `workspace_root`
+parameter builds these volume mounts automatically, one per session.
 
 ## Related Projects
 

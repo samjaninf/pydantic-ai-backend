@@ -161,6 +161,7 @@ nav:
     - Backends: api/backends.md
     - Permissions: api/permissions.md
     - Docker: api/docker.md
+    - Daytona: api/daytona.md
     - Toolsets: api/toolsets.md
     - Types: api/types.md
   - Changelog: changelog.md

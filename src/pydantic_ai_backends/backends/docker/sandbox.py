@@ -31,6 +31,127 @@ if TYPE_CHECKING:
     pass
 
 
+# Package names may only contain these characters. This is deliberately strict:
+# it covers pip (PEP 508 names, extras, version specifiers), npm (including
+# scoped @scope/name), apt and cargo package names, while rejecting shell
+# metacharacters and whitespace that could break out of the RUN instruction.
+_PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9@][A-Za-z0-9._@/+=<>~!\[\]-]*$")
+
+# Environment variable names follow the POSIX portable character set.
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Characters that must never appear unescaped in a generated Dockerfile line
+# because they would let a value break out into its own shell command.
+_SHELL_METACHARACTERS = set(";&|`$()<>\n\r")
+
+
+def _reject_metacharacters(value: str, *, what: str) -> None:
+    """Reject values containing shell metacharacters or newlines.
+
+    Args:
+        value: The value to validate.
+        what: Human-readable description for the error message.
+
+    Raises:
+        ValueError: If the value contains a shell metacharacter or newline.
+    """
+    bad = _SHELL_METACHARACTERS.intersection(value)
+    if bad:
+        rendered = ", ".join(sorted(repr(c) for c in bad))
+        raise ValueError(f"{what} contains disallowed shell metacharacters: {rendered}")
+
+
+def _validate_package_name(name: str) -> str:
+    """Validate a package name against a strict allowlist.
+
+    Args:
+        name: The package name to validate.
+
+    Returns:
+        The validated package name.
+
+    Raises:
+        ValueError: If the name is empty or contains disallowed characters.
+    """
+    if not name or not _PACKAGE_NAME_RE.match(name):
+        raise ValueError(f"Invalid package name: {name!r}")
+    return name
+
+
+def _validate_env_var(key: str, value: str) -> tuple[str, str]:
+    """Validate an environment variable name and quote its value.
+
+    Args:
+        key: The environment variable name.
+        value: The environment variable value.
+
+    Returns:
+        A `(key, quoted_value)` tuple safe for an `ENV` instruction.
+
+    Raises:
+        ValueError: If the key is invalid or the value contains a newline.
+    """
+    if not _ENV_KEY_RE.match(key):
+        raise ValueError(f"Invalid environment variable name: {key!r}")
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"Environment variable {key!r} value contains a newline")
+    return key, shlex.quote(value)
+
+
+def _build_dockerfile(runtime: RuntimeConfig) -> str:
+    """Build Dockerfile content for a runtime, validating untrusted values.
+
+    Package names, environment variable names/values and the work directory
+    are all validated or quoted before interpolation so that values containing
+    shell metacharacters cannot inject commands during the image build.
+
+    Args:
+        runtime: Runtime configuration with a resolved `base_image`.
+
+    Returns:
+        Dockerfile content as a string.
+
+    Raises:
+        ValueError: If any package name, env var or work_dir is unsafe.
+    """
+    assert runtime.base_image is not None
+    lines = [f"FROM {runtime.base_image}"]
+
+    # Setup commands are author-controlled shell snippets; reject newlines so a
+    # single command cannot smuggle extra RUN lines into the Dockerfile.
+    for cmd in runtime.setup_commands:
+        if "\n" in cmd or "\r" in cmd:
+            raise ValueError("setup command contains a newline")
+        lines.append(f"RUN {cmd}")
+
+    # Install packages
+    if runtime.packages:
+        packages = [_validate_package_name(p) for p in runtime.packages]
+        packages_str = " ".join(packages)
+        if runtime.package_manager == "pip":
+            lines.append(f"RUN pip install --no-cache-dir {packages_str}")
+        elif runtime.package_manager == "npm":
+            # Install into the work_dir's node_modules (not -g) so application
+            # libraries like react/react-dom are resolvable from user code.
+            lines.append(f"WORKDIR {shlex.quote(runtime.work_dir)}")
+            lines.append(f"RUN npm install {packages_str}")
+        elif runtime.package_manager == "apt":
+            lines.append(f"RUN apt-get update && apt-get install -y {packages_str}")
+        elif runtime.package_manager == "cargo":  # pragma: no branch
+            lines.append(f"RUN cargo install {packages_str}")
+
+    # Environment variables
+    for key, value in runtime.env_vars.items():
+        safe_key, safe_value = _validate_env_var(key, value)
+        lines.append(f"ENV {safe_key}={safe_value}")
+
+    # Work directory
+    _reject_metacharacters(runtime.work_dir, what="work_dir")
+    lines.append(f"WORKDIR {shlex.quote(runtime.work_dir)}")
+
+    return "\n".join(lines)
+
+
 class DockerSandbox(BaseSandbox):  # pragma: no cover
     """Docker-based sandbox for isolated command execution.
 
@@ -75,8 +196,8 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             image: Docker image to use (ignored if runtime is provided).
             sandbox_id: Unique identifier for this sandbox.
             work_dir: Working directory inside container (ignored if runtime is provided).
-            auto_remove: Remove container when stopped. Forced to ``False``
-                when ``container_name`` is set (reusable containers).
+            auto_remove: Remove container when stopped. Forced to `False`
+                when `container_name` is set (reusable containers).
             runtime: RuntimeConfig or name of built-in runtime.
             session_id: Alias for sandbox_id (for session management).
             idle_timeout: Timeout in seconds for idle cleanup (default: 1 hour).
@@ -85,9 +206,9 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             network_mode: Docker network mode ("bridge", "none", "host",
                          "container:<name|id>"). None uses Docker default.
             container_name: Stable Docker container name for reuse across
-                restarts. When set, ``_ensure_container()`` looks for an existing
+                restarts. When set, `_ensure_container()` looks for an existing
                 container with this name and reattaches (or starts it if stopped)
-                instead of creating a new one. Implies ``auto_remove=False``.
+                instead of creating a new one. Implies `auto_remove=False`.
         """
         # session_id is an alias for sandbox_id
         effective_id = session_id or sandbox_id
@@ -135,7 +256,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
     def _ensure_container(self) -> None:
         """Ensure Docker container is running.
 
-        When ``container_name`` is set, looks for an existing container with
+        When `container_name` is set, looks for an existing container with
         that name and reattaches.  Stopped containers are restarted so that
         installed packages, caches, and other filesystem state are preserved
         across CLI sessions.
@@ -271,32 +392,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             Dockerfile content as string.
         """
         assert runtime.base_image is not None
-        lines = [f"FROM {runtime.base_image}"]
-
-        # Setup commands
-        for cmd in runtime.setup_commands:
-            lines.append(f"RUN {cmd}")
-
-        # Install packages
-        if runtime.packages:
-            packages_str = " ".join(runtime.packages)
-            if runtime.package_manager == "pip":
-                lines.append(f"RUN pip install --no-cache-dir {packages_str}")
-            elif runtime.package_manager == "npm":
-                lines.append(f"RUN npm install -g {packages_str}")
-            elif runtime.package_manager == "apt":
-                lines.append(f"RUN apt-get update && apt-get install -y {packages_str}")
-            elif runtime.package_manager == "cargo":
-                lines.append(f"RUN cargo install {packages_str}")
-
-        # Environment variables
-        for key, value in runtime.env_vars.items():
-            lines.append(f"ENV {key}={value}")
-
-        # Work directory
-        lines.append(f"WORKDIR {runtime.work_dir}")
-
-        return "\n".join(lines)
+        return _build_dockerfile(runtime)
 
     def execute(self, command: str, timeout: int | None = None) -> ExecuteResponse:
         """Execute command in Docker container."""
@@ -307,7 +403,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         try:
             # Note: Docker SDK exec_run doesn't support timeout parameter directly.
             # For timeouts, we wrap the command with 'timeout' utility.
-            if timeout:
+            if timeout is not None:
                 exec_cmd = ["timeout", str(timeout), "sh", "-c", command]
             else:
                 exec_cmd = ["sh", "-c", command]
@@ -474,9 +570,14 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         chardet = _get_chardet()
         # Use chardet to detect encoding with confidence
         detected_encoding = chardet.detect(file_bytes).get("encoding")
-        # Fallback to common encodings if detection failed or low confidence
-        encodings = {detected_encoding, "utf-8"} if detected_encoding else ["utf-8"]
+        # Try the detected encoding first, then utf-8. Use an ordered list (not
+        # a set) so decode order is deterministic for borderline inputs.
+        encodings = [detected_encoding, "utf-8"] if detected_encoding else ["utf-8"]
+        seen: set[str] = set()
         for encoding in encodings:
+            if encoding in seen:
+                continue
+            seen.add(encoding)
             text = file_bytes.decode(encoding, errors="replace")
             if text.count("\ufffd") < max(len(text) // 100, 2):
                 return text
@@ -656,8 +757,10 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             # Reset buffer position
             tar_buffer.seek(0)
 
-            # Upload to container
-            self._container.put_archive(parent_dir, tar_buffer)
+            # Upload to container. put_archive returns False when the target
+            # path is not a directory or the upload otherwise fails.
+            if not self._container.put_archive(parent_dir, tar_buffer):
+                return WriteResult(error=f"Failed to write file: put_archive to {parent_dir}")
 
             return WriteResult(path=path)
 
@@ -697,6 +800,16 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             self._container = None
 
     def __del__(self) -> None:
-        """Cleanup container on deletion."""
-        if hasattr(self, "_container"):
-            self.stop()
+        """Best-effort cleanup on garbage collection.
+
+        Relying on `__del__` for container cleanup is unreliable (it may run
+        during interpreter shutdown when modules are torn down, or never run at
+        all). Prefer the explicit :meth:`stop` lifecycle. Any error raised
+        during teardown is suppressed so it cannot surface as a spurious
+        exception during shutdown.
+        """
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            if getattr(self, "_container", None) is not None:
+                self.stop()

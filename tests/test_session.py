@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pydantic_ai_backends import RuntimeConfig, SessionManager
+import asyncio
+from pathlib import Path
 
 
 class MockDockerSandbox:
@@ -134,6 +136,30 @@ class TestSessionManager:
             sandbox2 = await manager.get_or_create("user-123")
             assert sandbox1 is not sandbox2
             assert manager.session_count == 1
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_concurrent_same_id_no_duplicate(self):
+        """Concurrent calls for the same id share one sandbox (no race leak)."""
+
+        created: list[MockCustomSandbox] = []
+
+        def slow_factory(session_id: str) -> MockCustomSandbox:
+            sandbox = MockCustomSandbox(session_id)
+            created.append(sandbox)
+            return sandbox
+
+        manager = SessionManager(sandbox_factory=slow_factory)
+
+        # Fire two concurrent requests for the same session id.
+        results = await asyncio.gather(
+            manager.get_or_create("user-x"),
+            manager.get_or_create("user-x"),
+        )
+
+        # Exactly one sandbox is created and both callers get the same one.
+        assert results[0] is results[1]
+        assert len(created) == 1
+        assert manager.session_count == 1
 
     @pytest.mark.asyncio
     async def test_release_existing_session(self):
@@ -271,7 +297,6 @@ class TestSessionManager:
 
     def test_init_with_workspace_root_path(self):
         """Test initialization with workspace_root as Path."""
-        from pathlib import Path
 
         manager = SessionManager(workspace_root=Path("/tmp/sessions"))
         assert manager._workspace_root is not None

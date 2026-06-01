@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-06-01
+
+### Changed
+
+- **Docstring and import hygiene (internal; no behavior change).** Converted reStructuredText-style double-backtick inline code in docstrings and comments to single-backtick Markdown (108 occurrences), so it renders correctly under the mkdocstrings Markdown handler. Hoisted 12 function-local imports to module top where safe; the optional-dependency `daytona` and `docker.errors` imports were intentionally left local (they must not load when those extras are absent), along with conditional and circular-import-avoidance imports.
+
+### Security
+
+- **Dockerfile generation now validates and escapes untrusted runtime values** - `RuntimeConfig` package names, environment variable names/values, setup commands, and `work_dir` were interpolated directly into `RUN`/`ENV`/`WORKDIR` lines with no validation, so a value like `foo; rm -rf /` could execute arbitrary commands during image build. Package names are now checked against a strict allowlist regex (supporting npm scoped names like `@types/react`), env var names follow the POSIX portable character set, env values and `work_dir` are `shlex`-quoted, and setup commands / env values containing newlines or shell metacharacters are rejected with `ValueError`.
+- **Glob negated character class `[!...]` is no longer mistranslated in permission matching** - `_glob_to_regex` copied a glob character class verbatim, so glob negation `[!a]` (meaning "any char except a") became regex `[!a]` (matching the literal `!` or `a`) - the exact opposite, silently inverting deny/allow rules that used negated classes. A leading `!`/`^` after `[` is now emitted as regex `[^...]`.
+
+### Fixed
+
+- **`BaseSandbox.read()` reported wrong line numbers when `offset > 0`** - the `sed | cat -n` pipeline renumbered the slice from 1; it now uses `awk` so line numbers reflect real file positions (matching `StateBackend`/`LocalBackend`).
+- **`BaseSandbox.write()` corrupted content via heredoc escaping** - the body was pre-escaping `\`, `$`, and backtick even though the heredoc delimiter is quoted (no shell expansion), doubling backslashes and inserting literal `\$`/`` \` ``. The escaping is removed so content is written verbatim.
+- **`BaseSandbox.glob_info()` double-quoted the path and never matched basename globs** - the already `shlex`-quoted path was re-wrapped in single quotes, and `-path '{pattern}'` matched the whole pathname so patterns like `*.py` never matched. The path is now quoted once and the pattern is prefixed (`-path '*/{pattern}'`).
+- **npm runtime packages were installed globally and unimportable** - `node-react` and other npm runtimes ran `npm install -g`, so libraries like `react`/`react-dom` were not resolvable from a project's `node_modules`. They are now installed locally into the `work_dir`.
+- **`SessionManager.get_or_create()` race could create duplicate sandboxes** - the unguarded check-then-create allowed two concurrent calls for the same `session_id` to each create and start a sandbox, leaking one. A per-session `asyncio.Lock` now serializes creation.
+- **`hashline` edits silently ignored a range when `insert_after=True`** - `end_line`/`end_hash` were validated but then ignored by the insert branch. The combination is now rejected with a clear error so callers are not misled.
+- **Empty files were reported as "not found"** - the console `read_file` (hashline) and `hashline_edit` tools used `if not raw_bytes`, treating a legitimately empty file (`b""`) as missing. They now use `backend.exists(path)` to distinguish missing from empty.
+- **`BaseSandbox.read_bytes()` / `DaytonaSandbox.read_bytes()` returned an error sentinel as file bytes** - on failure they returned `[Error: ...]`-encoded bytes, indistinguishable from a real file beginning with `[Error:`. They now return `b""` on failure (matching the other backends), and `DaytonaSandbox.edit()` uses `exists()` to detect missing files instead of sniffing the sentinel.
+- **`CompositeBackend.grep_raw()` swallowed search errors** - when aggregating from root, error strings from the default backend and all string results from routed backends were dropped, so an invalid regex looked like "no matches". The first error encountered is now propagated.
+- **`DockerSandbox.execute(timeout=0)` ran unbounded** - `if timeout:` treated `0` like `None`; it now uses `if timeout is not None:`.
+- **`DockerSandbox._decode_unknown_text()` had nondeterministic decode order** - when chardet detected an encoding, the candidates were stored in a `set`, so iteration order (detected vs utf-8) was unspecified. It now uses an ordered, deduplicated list with the detected encoding first.
+- **`DockerSandbox.write()` ignored the `put_archive` result** - a `False` return (e.g. target is not a directory) was treated as success. It now returns a `WriteResult(error=...)`.
+- **`DockerSandbox.__del__` could raise during interpreter shutdown** - the teardown is now wrapped in a broad `contextlib.suppress`, and the explicit `stop()` lifecycle is documented as the reliable path.
+- **`StateBackend.grep_raw()` missed an explicitly named hidden file** - with `ignore_hidden=True`, a directly requested hidden path (e.g. `/.env`) fell into the directory branch and matched nothing. An explicitly named file is now looked up in the full file set; the hidden filter applies only to directory walks.
+- **Renamed the custom `PermissionError` to `PermissionAskError`** to stop shadowing the builtin `PermissionError` (an `OSError` subclass) for importers of the permissions module. `PermissionError` remains as a deprecated subclass alias for backward compatibility.
+- **`create_console_toolset` docstring corrected** - `max_image_bytes` now documents the real 50MB default (was 10MB).
+- **`write_file` line count corrected** - the tool reported `content.count("\n") + 1`, which said "1 lines" for empty content and overcounted content ending in a newline. It now uses `len(content.splitlines())`.
+
+### Documentation
+
+- **Documentation accuracy pass.** Rewrote the broken `SessionManager` example in the multi-user guide to use the real async API (`get_or_create`/`release`/`shutdown`, `default_runtime`/`workspace_root`) and corrected its API-reference members (`create_session`/`get_session`/`end_session` did not exist). Added a `DaytonaSandbox` API page and documented the `[daytona]` install extra, replaced the deprecated `PermissionError` with `PermissionAskError` in the permissions reference, fixed invalid Docker runtime keys (`python` → `python-minimal`) and the incorrect `DockerSandbox` `workspace_root` claim, added a hashline edit-format section to the console-toolset guide, and expanded the capability page. Resolved a duplicate `RuntimeConfig` render so `mkdocs build --strict` passes with zero warnings.
+
 ## [0.2.8] - 2026-05-24
 
 ### Added

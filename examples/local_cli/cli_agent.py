@@ -14,6 +14,7 @@ from pathlib import Path
 from pydantic_ai import Agent
 
 from pydantic_ai_backends import LocalBackend, create_console_toolset, get_console_system_prompt
+import argparse
 
 
 @dataclass
@@ -124,7 +125,6 @@ Example commands:
 
 def main() -> None:
     """Main entry point."""
-    import argparse
 
     parser = argparse.ArgumentParser(description="CLI Agent with file operations")
     parser.add_argument(

@@ -65,7 +65,21 @@
         - requires_approval
         - ruleset
 
+### PermissionAskError
+
+Raised when a permission check resolves to `"ask"` but no `ask_callback` is
+available and `ask_fallback="error"`.
+
+::: pydantic_ai_backends.permissions.checker.PermissionAskError
+    options:
+      show_root_heading: true
+
 ### PermissionError
+
+!!! warning "Deprecated"
+    `PermissionError` is a deprecated alias for
+    [`PermissionAskError`][pydantic_ai_backends.permissions.checker.PermissionAskError].
+    It shadows the builtin `PermissionError`; use `PermissionAskError` instead.
 
 ::: pydantic_ai_backends.permissions.checker.PermissionError
     options:

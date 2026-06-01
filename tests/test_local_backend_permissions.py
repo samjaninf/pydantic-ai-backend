@@ -7,8 +7,8 @@ import pytest
 from pydantic_ai_backends import LocalBackend
 from pydantic_ai_backends.permissions import (
     OperationPermissions,
+    PermissionAskError,
     PermissionChecker,
-    PermissionError,
     PermissionRule,
     PermissionRuleset,
 )
@@ -144,7 +144,7 @@ class TestLocalBackendReadPermissions:
 
         (tmp_path / "test.txt").write_text("content")
 
-        with pytest.raises(PermissionError):
+        with pytest.raises(PermissionAskError):
             backend.read("test.txt")
 
 

@@ -183,6 +183,24 @@ class TestApplyHashlineEdit:
         assert error is None
         assert new == "aaa\nbbb\nNEW\nccc\n"
 
+    def test_insert_after_rejects_end_line(self):
+        content = "aaa\nbbb\nccc\n"
+        h = self._content_and_hash(content, 1)
+        new, error = apply_hashline_edit(content, 1, h, "NEW", end_line=2, insert_after=True)
+        assert error is not None
+        assert "insert_after" in error
+        # Content is returned unchanged on error.
+        assert new == content
+
+    def test_insert_after_rejects_end_hash(self):
+        content = "aaa\nbbb\nccc\n"
+        h = self._content_and_hash(content, 1)
+        h2 = self._content_and_hash(content, 2)
+        new, error = apply_hashline_edit(content, 1, h, "NEW", end_hash=h2, insert_after=True)
+        assert error is not None
+        assert "insert_after" in error
+        assert new == content
+
     def test_delete_single_line(self):
         content = "aaa\nbbb\nccc\n"
         h = self._content_and_hash(content, 2)

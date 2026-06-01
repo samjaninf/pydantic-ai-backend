@@ -42,15 +42,19 @@
       show_root_heading: true
       members:
         - __init__
-        - create_session
-        - get_session
-        - end_session
+        - get_or_create
+        - release
+        - cleanup_idle
+        - start_cleanup_loop
+        - shutdown
+        - sessions
+        - session_count
 
 ## RuntimeConfig
 
-::: pydantic_ai_backends.types.RuntimeConfig
-    options:
-      show_root_heading: true
+The runtime descriptor (image, setup commands, environment) used by
+[`DockerSandbox`][pydantic_ai_backends.DockerSandbox] and the session manager is
+documented in the type reference: [`RuntimeConfig`][pydantic_ai_backends.types.RuntimeConfig].
 
 ## Built-in Runtimes
 
