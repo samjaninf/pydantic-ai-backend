@@ -28,6 +28,15 @@ IMAGE_MEDIA_TYPES: dict[str, str] = {
 }
 """Mapping of file extensions to MIME media types for images."""
 
+DOCUMENT_MEDIA_TYPES: dict[str, str] = {
+    "pdf": "application/pdf",
+}
+"""Mapping of file extensions to MIME media types for binary documents.
+
+These are returned as ``BinaryContent`` (like images) so that multimodal models
+capable of document understanding (OpenAI/Anthropic/Gemini) can read them
+directly instead of receiving garbled or empty text."""
+
 DEFAULT_MAX_IMAGE_BYTES: int = 50 * 1024 * 1024
 """Default maximum image file size (50MB)."""
 
@@ -288,6 +297,47 @@ def _is_denied_by_ruleset(
 _edit_locks: weakref.WeakKeyDictionary[Any, dict[str, asyncio.Lock]] = weakref.WeakKeyDictionary()
 
 
+async def _maybe_binary_content(
+    backend: BackendProtocol,
+    path: str,
+    image_support: bool,
+    max_image_bytes: int,
+) -> BinaryContent | str | None:
+    """Return viewable binary content for images and documents.
+
+    Shared by both ``read_file`` variants (str_replace and hashline) so the
+    image/document handling can't drift between them.
+
+    Returns:
+        - ``BinaryContent`` when ``path`` is a recognized image or document and
+          the file reads successfully within the size limit.
+        - An error string when the file is missing/empty or exceeds the limit.
+        - ``None`` when the file is not a recognized binary type (the caller
+          should fall through to the normal text read).
+    """
+    if not image_support:
+        return None
+
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    if ext in IMAGE_EXTENSIONS:
+        media_type = IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
+        kind = "Image"
+    elif ext in DOCUMENT_MEDIA_TYPES:
+        media_type = DOCUMENT_MEDIA_TYPES[ext]
+        kind = "Document"
+    else:
+        return None
+
+    raw = await asyncio.to_thread(backend.read_bytes, path)
+    if not raw:
+        return f"Error: {kind} file '{path}' not found or empty"
+    if len(raw) > max_image_bytes:
+        size_mb = len(raw) / (1024 * 1024)
+        limit_mb = max_image_bytes / (1024 * 1024)
+        return f"Error: {kind} '{path}' too large ({size_mb:.1f}MB, max {limit_mb:.1f}MB)"
+    return BinaryContent(data=raw, media_type=media_type)  # pyright: ignore[reportCallIssue]
+
+
 def create_console_toolset(  # noqa: C901
     id: str | None = None,
     include_execute: bool = True,
@@ -323,13 +373,16 @@ def create_console_toolset(  # noqa: C901
             When the model sends invalid arguments (e.g. missing required fields),
             the validation error is fed back and the model can retry up to this
             many times. Defaults to 1.
-        image_support: Whether to enable image file handling in read_file.
-            When True, reading image files (.png, .jpg, .jpeg, .gif, .webp) returns
-            a BinaryContent object that multimodal models can see, instead of garbled
-            text. Defaults to False.
-        max_image_bytes: Maximum image file size in bytes (default: 50MB).
-            Images larger than this will return an error message instead.
-            Only used when image_support is True.
+        image_support: Whether to enable binary file handling in read_file.
+            When True, reading image files (.png, .jpg, .jpeg, .gif, .webp) and
+            binary documents (.pdf) returns a BinaryContent object that multimodal
+            models can see, instead of garbled or empty text. PDFs are treated as
+            "viewable binary" under this same flag so capable models
+            (OpenAI/Anthropic/Gemini) can perform document understanding.
+            Defaults to False.
+        max_image_bytes: Maximum binary file size in bytes (default: 50MB).
+            Images and documents larger than this will return an error message
+            instead. Only used when image_support is True.
         edit_format: File editing format to use.  `"str_replace"` (default) uses
             exact string matching.  `"hashline"` tags each line with a content hash
             so models can reference lines by number:hash instead of reproducing text.
@@ -428,21 +481,11 @@ def create_console_toolset(  # noqa: C901
                 offset: Line number to start reading from (0-indexed).
                 limit: Maximum number of lines to read. Defaults to 2000.
             """
-            if image_support:
-                ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-                if ext in IMAGE_EXTENSIONS:
-                    raw = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
-                    if not raw:
-                        return f"Error: Image file '{path}' not found or empty"
-                    if len(raw) > max_image_bytes:
-                        size_mb = len(raw) / (1024 * 1024)
-                        limit_mb = max_image_bytes / (1024 * 1024)
-                        return (
-                            f"Error: Image '{path}' too large "
-                            f"({size_mb:.1f}MB, max {limit_mb:.1f}MB)"
-                        )
-                    media_type = IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
-                    return BinaryContent(data=raw, media_type=media_type)  # pyright: ignore[reportCallIssue]
+            binary = await _maybe_binary_content(
+                ctx.deps.backend, path, image_support, max_image_bytes
+            )
+            if binary is not None:
+                return binary
 
             from pydantic_ai_backends.hashline import format_hashline_output
 
@@ -468,21 +511,11 @@ def create_console_toolset(  # noqa: C901
                 offset: Line number to start reading from (0-indexed).
                 limit: Maximum number of lines to read. Defaults to 2000.
             """
-            if image_support:
-                ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-                if ext in IMAGE_EXTENSIONS:
-                    raw = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
-                    if not raw:
-                        return f"Error: Image file '{path}' not found or empty"
-                    if len(raw) > max_image_bytes:
-                        size_mb = len(raw) / (1024 * 1024)
-                        limit_mb = max_image_bytes / (1024 * 1024)
-                        return (
-                            f"Error: Image '{path}' too large "
-                            f"({size_mb:.1f}MB, max {limit_mb:.1f}MB)"
-                        )
-                    media_type = IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
-                    return BinaryContent(data=raw, media_type=media_type)  # pyright: ignore[reportCallIssue]
+            binary = await _maybe_binary_content(
+                ctx.deps.backend, path, image_support, max_image_bytes
+            )
+            if binary is not None:
+                return binary
             return await asyncio.to_thread(ctx.deps.backend.read, path, offset, limit)
 
     # --- write_file tool ---

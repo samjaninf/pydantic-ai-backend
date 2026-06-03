@@ -99,6 +99,7 @@ if TYPE_CHECKING:
     )
     from pydantic_ai_backends.toolsets.console import (
         DEFAULT_MAX_IMAGE_BYTES,
+        DOCUMENT_MEDIA_TYPES,
         EDIT_FILE_DESCRIPTION,
         EXECUTE_DESCRIPTION,
         GLOB_DESCRIPTION,
@@ -143,6 +144,7 @@ _LAZY_IMPORTS = {
     "EXECUTE_DESCRIPTION": "pydantic_ai_backends.toolsets.console",
     "IMAGE_EXTENSIONS": "pydantic_ai_backends.toolsets.console",
     "IMAGE_MEDIA_TYPES": "pydantic_ai_backends.toolsets.console",
+    "DOCUMENT_MEDIA_TYPES": "pydantic_ai_backends.toolsets.console",
     "DEFAULT_MAX_IMAGE_BYTES": "pydantic_ai_backends.toolsets.console",
     # Daytona sandbox (requires daytona extra)
     "DaytonaSandbox": "pydantic_ai_backends.backends.daytona",
@@ -225,9 +227,10 @@ __all__ = [
     "GLOB_DESCRIPTION",
     "GREP_DESCRIPTION",
     "EXECUTE_DESCRIPTION",
-    # Image support constants
+    # Image/document support constants
     "IMAGE_EXTENSIONS",
     "IMAGE_MEDIA_TYPES",
+    "DOCUMENT_MEDIA_TYPES",
     "DEFAULT_MAX_IMAGE_BYTES",
     # Daytona sandbox (optional - requires daytona extra)
     "DaytonaSandbox",
