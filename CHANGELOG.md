@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11] - 2026-06-07
+
+### Added
+
+- **`read_file` can return PDFs as `BinaryContent` for document understanding** ([#48](https://github.com/vstorm-co/pydantic-ai-backend/pull/48)) (`src/pydantic_ai_backends/toolsets/console.py`). Previously `create_console_toolset`'s `read_file` returned raster images (png/jpg/jpeg/gif/webp) as `pydantic_ai.BinaryContent` under `image_support`, but PDFs fell through to the text path and were read via the `awk`-based `BaseSandbox.read`, which on a binary PDF emits an empty string — so `read_file("report.pdf")` returned `""` instead of usable content. Documents are now handled as a **separate, independent content kind** from images:
+  - New **`document_support: bool = False`** and **`max_document_bytes`** parameters on `create_console_toolset` (default off → fully backward compatible; `image_support` / `max_image_bytes` unchanged).
+  - New exported constants, kept disjoint from the image ones: `DOCUMENT_EXTENSIONS` (`{"pdf"}`), `DOCUMENT_MEDIA_TYPES` (`{"pdf": "application/pdf"}`), and `DEFAULT_MAX_DOCUMENT_BYTES` (50 MB). When `document_support=True`, reading a PDF returns `BinaryContent(media_type="application/pdf")` so capable models (OpenAI/Anthropic/Gemini) can read it directly.
+  - Internally, `read_file` (both `edit_format` variants) now delegates to two clearly-named helpers — `_maybe_image_content` and `_maybe_document_content` — over a shared `_read_binary_within_limit` (not-found/empty + size-limit guards), removing the prior duplication between the two `read_file` definitions while keeping the image and document seams independent for future per-kind handling (e.g. OCR for images vs. native document understanding / text extraction for PDF/DOCX).
+
 ## [0.2.10] - 2026-06-01
 
 ### Changed
