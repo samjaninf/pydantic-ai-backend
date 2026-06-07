@@ -4,7 +4,7 @@ import inspect
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic_ai import BinaryContent
+from pydantic_ai import BinaryContent, RunContext
 
 from pydantic_ai_backends import (
     LocalBackend,
@@ -13,11 +13,19 @@ from pydantic_ai_backends import (
     get_console_system_prompt,
 )
 from pydantic_ai_backends.toolsets.console import (
+    DEFAULT_MAX_DOCUMENT_BYTES,
     DEFAULT_MAX_IMAGE_BYTES,
+    DOCUMENT_EXTENSIONS,
+    DOCUMENT_MEDIA_TYPES,
     IMAGE_EXTENSIONS,
     IMAGE_MEDIA_TYPES,
     ConsoleDeps,
+    _maybe_document_content,
+    _maybe_image_content,
 )
+
+# Minimal valid-ish PDF payload (header + EOF marker).
+PDF_DATA = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\n%%EOF\n"
 
 
 @dataclass
@@ -327,3 +335,277 @@ class TestConsoleToolsetAlias:
 
         toolset = ConsoleToolset()
         assert len(toolset.tools) > 0
+
+
+class TestDocumentConstants:
+    """Test document-related constants."""
+
+    def test_document_extensions(self):
+        """Test DOCUMENT_EXTENSIONS contains pdf."""
+        assert "pdf" in DOCUMENT_EXTENSIONS
+
+    def test_document_media_types(self):
+        """Test DOCUMENT_MEDIA_TYPES maps pdf to application/pdf."""
+        assert DOCUMENT_MEDIA_TYPES["pdf"] == "application/pdf"
+
+    def test_pdf_not_in_image_extensions(self):
+        """PDFs are documents, not images - the two sets stay disjoint."""
+        assert "pdf" not in IMAGE_EXTENSIONS
+        assert IMAGE_EXTENSIONS.isdisjoint(DOCUMENT_EXTENSIONS)
+
+    def test_all_document_extensions_have_media_types(self):
+        """Every DOCUMENT_EXTENSION has a corresponding DOCUMENT_MEDIA_TYPE."""
+        for ext in DOCUMENT_EXTENSIONS:
+            assert ext in DOCUMENT_MEDIA_TYPES
+
+    def test_default_max_document_bytes(self):
+        """Test DEFAULT_MAX_DOCUMENT_BYTES is 50MB."""
+        assert DEFAULT_MAX_DOCUMENT_BYTES == 50 * 1024 * 1024
+
+    def test_document_constants_exported(self):
+        """Test document constants are importable from the package."""
+        from pydantic_ai_backends import DEFAULT_MAX_DOCUMENT_BYTES as max_exported
+        from pydantic_ai_backends import DOCUMENT_EXTENSIONS as ext_exported
+        from pydantic_ai_backends import DOCUMENT_MEDIA_TYPES as media_exported
+
+        assert ext_exported == DOCUMENT_EXTENSIONS
+        assert media_exported == DOCUMENT_MEDIA_TYPES
+        assert max_exported == DEFAULT_MAX_DOCUMENT_BYTES
+
+
+class TestCreateConsoleToolsetDocumentParams:
+    """Test create_console_toolset with document parameters."""
+
+    def test_create_toolset_with_document_support(self):
+        """Test creating toolset with document_support=True."""
+        toolset = create_console_toolset(document_support=True)
+        assert "read_file" in toolset.tools
+
+    def test_create_toolset_with_custom_max_document_bytes(self):
+        """Test creating toolset with custom max_document_bytes."""
+        toolset = create_console_toolset(document_support=True, max_document_bytes=1024)
+        assert "read_file" in toolset.tools
+
+    def test_create_toolset_default_no_document_support(self):
+        """Test that document_support defaults to False."""
+        toolset = create_console_toolset()
+        assert "read_file" in toolset.tools
+
+
+class TestMaybeDocumentContent:
+    """Test the _maybe_document_content helper (separate from image handling)."""
+
+    async def test_pdf_returns_binary_content(self, tmp_path: Path):
+        """A .pdf file is returned as BinaryContent(application/pdf)."""
+        (tmp_path / "report.pdf").write_bytes(PDF_DATA)
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_document_content(
+            backend, "report.pdf", max_document_bytes=DEFAULT_MAX_DOCUMENT_BYTES
+        )
+
+        assert isinstance(result, BinaryContent)
+        assert result.media_type == "application/pdf"
+        assert result.data == PDF_DATA
+        assert result.is_document
+
+    async def test_pdf_too_large_returns_error(self, tmp_path: Path):
+        """An oversized .pdf returns the size-limit error string."""
+        (tmp_path / "huge.pdf").write_bytes(PDF_DATA)
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_document_content(backend, "huge.pdf", max_document_bytes=1)
+
+        assert result == (
+            f"Error: Document 'huge.pdf' too large "
+            f"({len(PDF_DATA) / (1024 * 1024):.1f}MB, max 0.0MB)"
+        )
+
+    async def test_pdf_missing_returns_error(self):
+        """A missing/empty .pdf returns the not-found error string."""
+        backend = StateBackend()
+
+        result = await _maybe_document_content(
+            backend, "missing.pdf", max_document_bytes=DEFAULT_MAX_DOCUMENT_BYTES
+        )
+
+        assert result == "Error: Document file 'missing.pdf' not found or empty"
+
+    async def test_image_returns_none(self, tmp_path: Path):
+        """An image is NOT a document - the document helper ignores it."""
+        png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        (tmp_path / "test.png").write_bytes(png_data)
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_document_content(
+            backend, "test.png", max_document_bytes=DEFAULT_MAX_DOCUMENT_BYTES
+        )
+
+        assert result is None
+
+    async def test_text_file_returns_none(self, tmp_path: Path):
+        """A non-document extension falls through to the text path."""
+        (tmp_path / "notes.txt").write_text("hello")
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_document_content(
+            backend, "notes.txt", max_document_bytes=DEFAULT_MAX_DOCUMENT_BYTES
+        )
+
+        assert result is None
+
+    async def test_no_extension_returns_none(self, tmp_path: Path):
+        """A file without an extension falls through to the text path."""
+        (tmp_path / "Makefile").write_text("all:\n")
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_document_content(
+            backend, "Makefile", max_document_bytes=DEFAULT_MAX_DOCUMENT_BYTES
+        )
+
+        assert result is None
+
+
+class TestMaybeImageContent:
+    """Test the _maybe_image_content helper (separate from document handling)."""
+
+    async def test_image_returns_binary_content(self, tmp_path: Path):
+        """Existing image behavior is unchanged."""
+        png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        (tmp_path / "test.png").write_bytes(png_data)
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_image_content(
+            backend, "test.png", max_image_bytes=DEFAULT_MAX_IMAGE_BYTES
+        )
+
+        assert isinstance(result, BinaryContent)
+        assert result.media_type == "image/png"
+        assert result.is_image
+
+    async def test_image_missing_error_message_unchanged(self):
+        """Image not-found error message is preserved verbatim."""
+        backend = StateBackend()
+
+        result = await _maybe_image_content(
+            backend, "missing.png", max_image_bytes=DEFAULT_MAX_IMAGE_BYTES
+        )
+
+        assert result == "Error: Image file 'missing.png' not found or empty"
+
+    async def test_image_too_large_message_unchanged(self, tmp_path: Path):
+        """Image size-limit error message is preserved verbatim."""
+        png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        (tmp_path / "test.png").write_bytes(png_data)
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_image_content(backend, "test.png", max_image_bytes=1)
+
+        assert result == (
+            f"Error: Image 'test.png' too large ({len(png_data) / (1024 * 1024):.1f}MB, max 0.0MB)"
+        )
+
+    async def test_pdf_returns_none(self, tmp_path: Path):
+        """A PDF is NOT an image - the image helper ignores it."""
+        (tmp_path / "report.pdf").write_bytes(PDF_DATA)
+        backend = LocalBackend(root_dir=tmp_path)
+
+        result = await _maybe_image_content(
+            backend, "report.pdf", max_image_bytes=DEFAULT_MAX_IMAGE_BYTES
+        )
+
+        assert result is None
+
+
+def _make_ctx(deps: MockDeps) -> RunContext[ConsoleDeps]:
+    """Build a minimal RunContext for invoking a tool function directly."""
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.usage import RunUsage
+
+    return RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+
+
+class TestReadFilePdfIntegration:
+    """End-to-end: invoke the real read_file tool for both edit_format variants."""
+
+    async def test_str_replace_read_file_pdf(self, tmp_path: Path):
+        """str_replace read_file returns BinaryContent for a PDF."""
+        (tmp_path / "report.pdf").write_bytes(PDF_DATA)
+        backend = LocalBackend(root_dir=tmp_path)
+        toolset = create_console_toolset(document_support=True)
+        read_file = toolset.tools["read_file"].function
+
+        result = await read_file(_make_ctx(MockDeps(backend=backend)), "report.pdf")
+
+        assert isinstance(result, BinaryContent)
+        assert result.media_type == "application/pdf"
+        assert result.data == PDF_DATA
+
+    async def test_hashline_read_file_pdf(self, tmp_path: Path):
+        """hashline read_file returns identical BinaryContent for a PDF."""
+        (tmp_path / "report.pdf").write_bytes(PDF_DATA)
+        backend = LocalBackend(root_dir=tmp_path)
+        toolset = create_console_toolset(document_support=True, edit_format="hashline")
+        read_file = toolset.tools["read_file"].function
+
+        result = await read_file(_make_ctx(MockDeps(backend=backend)), "report.pdf")
+
+        assert isinstance(result, BinaryContent)
+        assert result.media_type == "application/pdf"
+        assert result.data == PDF_DATA
+
+    async def test_pdf_ignored_without_document_support(self, tmp_path: Path):
+        """With document_support off, a PDF falls through to the text path."""
+        (tmp_path / "report.pdf").write_bytes(PDF_DATA)
+        backend = LocalBackend(root_dir=tmp_path)
+        # image_support on but document_support off: PDF must NOT become BinaryContent
+        toolset = create_console_toolset(image_support=True)
+        read_file = toolset.tools["read_file"].function
+
+        result = await read_file(_make_ctx(MockDeps(backend=backend)), "report.pdf")
+
+        assert not isinstance(result, BinaryContent)
+
+    async def test_image_and_document_support_together(self, tmp_path: Path):
+        """Both flags on: images and documents each resolve to BinaryContent."""
+        png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        (tmp_path / "test.png").write_bytes(png_data)
+        (tmp_path / "report.pdf").write_bytes(PDF_DATA)
+        backend = LocalBackend(root_dir=tmp_path)
+        toolset = create_console_toolset(image_support=True, document_support=True)
+        read_file = toolset.tools["read_file"].function
+        ctx = _make_ctx(MockDeps(backend=backend))
+
+        image = await read_file(ctx, "test.png")
+        document = await read_file(ctx, "report.pdf")
+
+        assert isinstance(image, BinaryContent)
+        assert image.media_type == "image/png"
+        assert isinstance(document, BinaryContent)
+        assert document.media_type == "application/pdf"
+
+    async def test_str_replace_read_file_text_unaffected(self, tmp_path: Path):
+        """Text files still return text (str_replace) with both flags on."""
+        (tmp_path / "readme.txt").write_text("Hello, world!")
+        backend = LocalBackend(root_dir=tmp_path)
+        toolset = create_console_toolset(image_support=True, document_support=True)
+        read_file = toolset.tools["read_file"].function
+
+        result = await read_file(_make_ctx(MockDeps(backend=backend)), "readme.txt")
+
+        assert isinstance(result, str)
+        assert "Hello, world!" in result
+
+    async def test_hashline_read_file_text_unaffected(self, tmp_path: Path):
+        """Text files still return hashline text with both flags on."""
+        (tmp_path / "readme.txt").write_text("Hello, world!")
+        backend = LocalBackend(root_dir=tmp_path)
+        toolset = create_console_toolset(
+            image_support=True, document_support=True, edit_format="hashline"
+        )
+        read_file = toolset.tools["read_file"].function
+
+        result = await read_file(_make_ctx(MockDeps(backend=backend)), "readme.txt")
+
+        assert isinstance(result, str)
+        assert "Hello, world!" in result

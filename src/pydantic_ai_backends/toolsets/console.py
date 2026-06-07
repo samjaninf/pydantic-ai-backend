@@ -31,6 +31,25 @@ IMAGE_MEDIA_TYPES: dict[str, str] = {
 DEFAULT_MAX_IMAGE_BYTES: int = 50 * 1024 * 1024
 """Default maximum image file size (50MB)."""
 
+DOCUMENT_EXTENSIONS: frozenset[str] = frozenset({"pdf"})
+"""File extensions recognized as binary documents when document_support is enabled.
+
+Kept deliberately separate from IMAGE_EXTENSIONS: images and documents are
+distinct content kinds that may eventually be handled differently (e.g. OCR for
+images, native document understanding or text extraction for PDF/DOCX)."""
+
+DOCUMENT_MEDIA_TYPES: dict[str, str] = {
+    "pdf": "application/pdf",
+}
+"""Mapping of document file extensions to MIME media types.
+
+Documents are returned as ``BinaryContent`` so that models capable of document
+understanding (OpenAI/Anthropic/Gemini) can read them directly instead of
+receiving garbled or empty text."""
+
+DEFAULT_MAX_DOCUMENT_BYTES: int = 50 * 1024 * 1024
+"""Default maximum document file size (50MB)."""
+
 if TYPE_CHECKING:
     from pydantic_ai.toolsets import FunctionToolset
 
@@ -288,6 +307,88 @@ def _is_denied_by_ruleset(
 _edit_locks: weakref.WeakKeyDictionary[Any, dict[str, asyncio.Lock]] = weakref.WeakKeyDictionary()
 
 
+def _file_extension(path: str) -> str:
+    """Return the lowercase file extension (without the dot), or "" if none."""
+    return path.rsplit(".", 1)[-1].lower() if "." in path else ""
+
+
+async def _read_binary_within_limit(
+    backend: BackendProtocol,
+    path: str,
+    max_bytes: int,
+    kind: str,
+) -> bytes | str:
+    """Read raw bytes, enforcing the not-found/empty and size-limit guards.
+
+    Args:
+        backend: Backend to read from.
+        path: File path to read.
+        max_bytes: Maximum allowed file size in bytes.
+        kind: Human-readable content kind ("Image" / "Document") for error text.
+
+    Returns:
+        The file bytes, or an error string when the file is missing/empty or
+        exceeds ``max_bytes``.
+    """
+    raw = await asyncio.to_thread(backend.read_bytes, path)
+    if not raw:
+        return f"Error: {kind} file '{path}' not found or empty"
+    if len(raw) > max_bytes:
+        size_mb = len(raw) / (1024 * 1024)
+        limit_mb = max_bytes / (1024 * 1024)
+        return f"Error: {kind} '{path}' too large ({size_mb:.1f}MB, max {limit_mb:.1f}MB)"
+    return raw
+
+
+async def _maybe_image_content(
+    backend: BackendProtocol,
+    path: str,
+    max_image_bytes: int,
+) -> BinaryContent | str | None:
+    """Return image content for recognized image files.
+
+    Returns:
+        - ``BinaryContent`` when ``path`` is a recognized image read within limit.
+        - An error string when the file is missing/empty or exceeds the limit.
+        - ``None`` when ``path`` is not an image (caller should keep looking).
+    """
+    ext = _file_extension(path)
+    if ext not in IMAGE_EXTENSIONS:
+        return None
+
+    result = await _read_binary_within_limit(backend, path, max_image_bytes, "Image")
+    if isinstance(result, str):
+        return result
+    media_type = IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
+    return BinaryContent(data=result, media_type=media_type)  # pyright: ignore[reportCallIssue]
+
+
+async def _maybe_document_content(
+    backend: BackendProtocol,
+    path: str,
+    max_document_bytes: int,
+) -> BinaryContent | str | None:
+    """Return document content for recognized binary document files.
+
+    Kept separate from image handling so document-specific behavior (e.g. OCR or
+    text extraction fallbacks via libraries) can evolve independently.
+
+    Returns:
+        - ``BinaryContent`` when ``path`` is a recognized document read within limit.
+        - An error string when the file is missing/empty or exceeds the limit.
+        - ``None`` when ``path`` is not a document (caller should keep looking).
+    """
+    ext = _file_extension(path)
+    if ext not in DOCUMENT_EXTENSIONS:
+        return None
+
+    result = await _read_binary_within_limit(backend, path, max_document_bytes, "Document")
+    if isinstance(result, str):
+        return result
+    media_type = DOCUMENT_MEDIA_TYPES[ext]
+    return BinaryContent(data=result, media_type=media_type)  # pyright: ignore[reportCallIssue]
+
+
 def create_console_toolset(  # noqa: C901
     id: str | None = None,
     include_execute: bool = True,
@@ -298,6 +399,8 @@ def create_console_toolset(  # noqa: C901
     max_retries: int = 1,
     image_support: bool = False,
     max_image_bytes: int = DEFAULT_MAX_IMAGE_BYTES,
+    document_support: bool = False,
+    max_document_bytes: int = DEFAULT_MAX_DOCUMENT_BYTES,
     edit_format: EditFormat = "str_replace",
     descriptions: dict[str, str] | None = None,
 ) -> FunctionToolset[ConsoleDeps]:
@@ -330,6 +433,16 @@ def create_console_toolset(  # noqa: C901
         max_image_bytes: Maximum image file size in bytes (default: 50MB).
             Images larger than this will return an error message instead.
             Only used when image_support is True.
+        document_support: Whether to enable binary document handling in read_file.
+            When True, reading document files (.pdf) returns a BinaryContent object
+            that models capable of document understanding (OpenAI/Anthropic/Gemini)
+            can read, instead of the empty/garbled text produced by reading a binary
+            file as text. Kept separate from image_support so document handling can
+            evolve independently (e.g. OCR or text-extraction fallbacks).
+            Defaults to False.
+        max_document_bytes: Maximum document file size in bytes (default: 50MB).
+            Documents larger than this will return an error message instead.
+            Only used when document_support is True.
         edit_format: File editing format to use.  `"str_replace"` (default) uses
             exact string matching.  `"hashline"` tags each line with a content hash
             so models can reference lines by number:hash instead of reproducing text.
@@ -359,6 +472,9 @@ def create_console_toolset(  # noqa: C901
 
         # With image support for multimodal models
         toolset = create_console_toolset(image_support=True)
+
+        # With document (PDF) support for document-understanding models
+        toolset = create_console_toolset(document_support=True)
 
         # Or with permissions
         from pydantic_ai_backends.permissions import DEFAULT_RULESET
@@ -429,20 +545,13 @@ def create_console_toolset(  # noqa: C901
                 limit: Maximum number of lines to read. Defaults to 2000.
             """
             if image_support:
-                ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-                if ext in IMAGE_EXTENSIONS:
-                    raw = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
-                    if not raw:
-                        return f"Error: Image file '{path}' not found or empty"
-                    if len(raw) > max_image_bytes:
-                        size_mb = len(raw) / (1024 * 1024)
-                        limit_mb = max_image_bytes / (1024 * 1024)
-                        return (
-                            f"Error: Image '{path}' too large "
-                            f"({size_mb:.1f}MB, max {limit_mb:.1f}MB)"
-                        )
-                    media_type = IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
-                    return BinaryContent(data=raw, media_type=media_type)  # pyright: ignore[reportCallIssue]
+                image = await _maybe_image_content(ctx.deps.backend, path, max_image_bytes)
+                if image is not None:
+                    return image
+            if document_support:
+                document = await _maybe_document_content(ctx.deps.backend, path, max_document_bytes)
+                if document is not None:
+                    return document
 
             from pydantic_ai_backends.hashline import format_hashline_output
 
@@ -469,20 +578,13 @@ def create_console_toolset(  # noqa: C901
                 limit: Maximum number of lines to read. Defaults to 2000.
             """
             if image_support:
-                ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-                if ext in IMAGE_EXTENSIONS:
-                    raw = await asyncio.to_thread(ctx.deps.backend.read_bytes, path)
-                    if not raw:
-                        return f"Error: Image file '{path}' not found or empty"
-                    if len(raw) > max_image_bytes:
-                        size_mb = len(raw) / (1024 * 1024)
-                        limit_mb = max_image_bytes / (1024 * 1024)
-                        return (
-                            f"Error: Image '{path}' too large "
-                            f"({size_mb:.1f}MB, max {limit_mb:.1f}MB)"
-                        )
-                    media_type = IMAGE_MEDIA_TYPES.get(ext, "application/octet-stream")
-                    return BinaryContent(data=raw, media_type=media_type)  # pyright: ignore[reportCallIssue]
+                image = await _maybe_image_content(ctx.deps.backend, path, max_image_bytes)
+                if image is not None:
+                    return image
+            if document_support:
+                document = await _maybe_document_content(ctx.deps.backend, path, max_document_bytes)
+                if document is not None:
+                    return document
             return await asyncio.to_thread(ctx.deps.backend.read, path, offset, limit)
 
     # --- write_file tool ---
