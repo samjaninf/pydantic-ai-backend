@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.12] - 2026-06-12
+
+### Added
+
+- **`KubernetesPodSandbox` — run the agent's shell tools inside a Kubernetes pod** ([#46](https://github.com/vstorm-co/pydantic-ai-backend/pull/46)) (`src/pydantic_ai_backends/backends/kubernetes.py`). A new `BaseSandbox` implementation with synchronous methods (matching `DockerSandbox`/`DaytonaSandbox`), usable as a drop-in for any `SessionManager` consumer. `start()` creates the pod and waits for it to become `Ready`; `stop()` deletes it. Two execution modes:
+  - **`mode="http"`** (default) talks to an in-pod HTTP exec server on `port` — recommended for long-running tool calls (`npm install`, headless browser, MCP servers).
+  - **`mode="api"`** uses the K8s `pods/exec` subresource (needs `pods/exec` RBAC on the caller; fine for short commands). Requires `/bin/sh` and a `timeout` binary in the image.
+
+  Exported as `KubernetesPodSandbox` from the package root (lazy import; requires the optional `kubernetes` extra).
+
 ## [0.2.11] - 2026-06-07
 
 ### Added
