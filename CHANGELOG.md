@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.14] - 2026-06-22
+
+### Added
+
+- **Async backend adapter support** ([#55](https://github.com/vstorm-co/pydantic-ai-backend/pull/55), closes [#54](https://github.com/vstorm-co/pydantic-ai-backend/issues/54)) (`src/pydantic_ai_backends/adapter.py`, `src/pydantic_ai_backends/protocol.py`). Lets consumers `await` backend I/O uniformly, whether the underlying backend is sync or natively async:
+  - New runtime-checkable `AsyncBackendProtocol` and `AsyncSandboxProtocol` describing the async file/sandbox surface.
+  - New `AsyncBackendAdapter` / `AsyncSandboxAdapter` wrapping a sync `BackendProtocol` / `SandboxProtocol`, delegating each call via `asyncio.to_thread`. `AsyncSandboxAdapter.execute()` prefers a native `async_execute()` when present, otherwise offloads `execute()` to a thread.
+  - New `ensure_async()` helper that returns native async backends untouched, is idempotent on already-wrapped adapters, and wraps sync backends (selecting the sandbox adapter when the backend exposes `execute`).
+  - All five names (`AsyncBackendProtocol`, `AsyncSandboxProtocol`, `AsyncBackendAdapter`, `AsyncSandboxAdapter`, `ensure_async`) are exported from the package root.
+
+### Fixed
+
+- **`AsyncBackendAdapter.read_bytes()` prefers public `read_bytes()` over private `_read_bytes()`** ([#54](https://github.com/vstorm-co/pydantic-ai-backend/issues/54)). Wrapper backends such as pydantic-deep's `BranchOverlay` expose a public `read_bytes()` but may not implement `_read_bytes`, so the adapter now uses the public method when available and only falls back to `_read_bytes` for existing backends — avoiding an `AttributeError` on `read_bytes()`.
+
+### Changed
+
+- **`create_console_toolset` routes all backend I/O through `ensure_async()`** (`src/pydantic_ai_backends/toolsets/console.py`). The console tools (`ls`, `read_file`, `write_file`, `edit_file`, `hashline_edit`, `glob`, `grep`, `execute`) now call `await ensure_async(backend).<op>()` instead of `asyncio.to_thread(backend.<op>, ...)`, so a natively async backend is awaited directly while sync backends keep their thread-offload behavior. The `execute_enabled` gate is still read from the unwrapped backend, and per-path edit locks remain keyed on the raw backend.
+
 ## [0.2.13] - 2026-06-17
 
 ### Fixed
